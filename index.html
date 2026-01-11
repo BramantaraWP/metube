@@ -1,988 +1,1154 @@
-<?php
-
-session_start();
-
-// ===== KONFIGURASI =====
-
-$admin_user = 'admin';
-$admin_pass = 'osis26pkt';
-$data_file = 'lagu.txt';
-$cooldown_file = 'cooldown.txt';
-
-// ===== DAFTAR BADWORDS =====
-
-$badwords = [
-    'anjing', 'bangsat', 'kontol', 'memek', 'ngentot', 'jancok', 'bajingan',
-    'asu', 'anjir', 'goblok', 'bodoh', 'tolol', 'idiot', 'bego', 'fuck',
-    'shit', 'bitch', 'asshole', 'dick', 'pussy', 'bastard', 'motherfucker',
-    'cibai', 'pukimak', 'babi', 'monyet', 'kunyuk', 'kirik', 'taik', 'tai',
-    'ewe', 'perek', 'pepek', 'tete', 'toket', 'ngentod', 'ngentit', 'pantek',
-    'lonte', 'bencong', 'banci', 'kafir', 'haram', 'sialan', 'brengsek',
-    'jembut', 'tempik', 'tempek', 'coli', 'masturbasi', 'sepong', 'blowjob'
-];
-
-// ===== FUNGSI UTAMA =====
-
-function cekBadwords($text) {
-    global $badwords;
-    $text_lower = strtolower($text);
-    
-    foreach ($badwords as $kata) {
-        if (strpos($text_lower, $kata) !== false) {
-            return $kata;
-        }
-    }
-    return false;
-}
-
-function simpanLagu($lagu) {
-    global $data_file;
-    $id = time() . rand(100,999);
-    $waktu = date('d/m/Y H:i:s');
-    $ip = $_SERVER['REMOTE_ADDR'];
-    
-    $lagu_filtered = filterBadwords($lagu);
-    
-    $data = "[$id]\n" .
-            "judul=$lagu_filtered\n" .
-            "waktu=$waktu\n" .
-            "status=pending\n" .
-            "ip=$ip\n" .
-            "---\n";
-    
-    file_put_contents($data_file, $data, FILE_APPEND);
-    return true;
-}
-
-function filterBadwords($text) {
-    global $badwords;
-    $text_lower = strtolower($text);
-    
-    foreach ($badwords as $kata) {
-        if (strpos($text_lower, $kata) !== false) {
-            $length = strlen($kata);
-            $replacement = str_repeat('*', $length);
-            $text = str_ireplace($kata, $replacement, $text);
-        }
-    }
-    return $text;
-}
-
-function bacaLagu() {
-    global $data_file;
-    
-    if (!file_exists($data_file)) return [];
-    
-    $content = file_get_contents($data_file);
-    $entries = explode("---\n", $content);
-    $data = [];
-    
-    foreach ($entries as $entry) {
-        if (trim($entry)) {
-            $lines = explode("\n", $entry);
-            $item = [];
-            foreach ($lines as $line) {
-                if (strpos($line, '=') !== false) {
-                    list($key, $value) = explode('=', $line, 2);
-                    $item[trim($key)] = trim($value);
-                }
-            }
-            if (!empty($item)) {
-                $data[] = $item;
-            }
-        }
-    }
-    
-    return array_reverse($data);
-}
-
-function cekCooldown($ip) {
-    global $cooldown_file;
-    
-    if (!file_exists($cooldown_file)) return false;
-    
-    $lines = file($cooldown_file, FILE_IGNORE_NEW_LINES);
-    foreach ($lines as $line) {
-        list($saved_ip, $time) = explode('|', $line);
-        if ($saved_ip == $ip) {
-            $selisih = time() - $time;
-            if ($selisih < 90) return 90 - $selisih;
-        }
-    }
-    
-    return false;
-}
-
-function setCooldown($ip) {
-    global $cooldown_file;
-    
-    $lines = file_exists($cooldown_file) ? file($cooldown_file, FILE_IGNORE_NEW_LINES) : [];
-    $new_lines = [];
-    
-    foreach ($lines as $line) {
-        list($saved_ip, ) = explode('|', $line);
-        if ($saved_ip != $ip) $new_lines[] = $line;
-    }
-    
-    $new_lines[] = $ip . '|' . time();
-    file_put_contents($cooldown_file, implode("\n", $new_lines));
-}
-
-function getYouTubeFromAPI($query) {
-    // Bersihkan query dari karakter khusus
-    $clean_query = urlencode(trim($query));
-    
-    // API endpoint
-    $api_url = "https://api-lb.ct.ws/?q=" . $clean_query . "&page=0";
-    
-    // Gunakan cURL untuk mengambil data
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $api_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    // Debug: Simpan response ke file
-    file_put_contents('api_response.txt', date('Y-m-d H:i:s') . " - Query: $query\n", FILE_APPEND);
-    file_put_contents('api_response.txt', "Response: $response\n\n", FILE_APPEND);
-    
-    if ($response && $http_code == 200) {
-        // Coba decode JSON
-        $data = json_decode($response, true);
-        
-        // Debug: Simpan data parsed
-        file_put_contents('api_parsed.txt', print_r($data, true), FILE_APPEND);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            // Coba bersihkan response
-            $response = trim($response);
-            $response = str_replace("\xEF\xBB\xBF", '', $response);
-            
-            // Cari videoId manual dalam response
-            if (preg_match('/"videoId"\s*:\s*"([^"]+)"/', $response, $matches)) {
-                $video_id = $matches[1];
-                $title = $query;
-                
-                // Cari title juga
-                if (preg_match('/"title"\s*:\s*"([^"]+)"/', $response, $title_matches)) {
-                    $title = $title_matches[1];
-                }
-                
-                return [
-                    'video_id' => $video_id,
-                    'title' => $title,
-                    'channel' => '',
-                    'thumbnail' => ''
-                ];
-            }
-        } else {
-            // Data sudah berhasil decode
-            if (is_array($data)) {
-                // Cari video pertama yang valid
-                foreach ($data as $item) {
-                    if (isset($item['videoId']) && !empty($item['videoId'])) {
-                        $video_id = trim($item['videoId']);
-                        
-                        if (preg_match('/^[a-zA-Z0-9_-]{11}$/', $video_id)) {
-                            $title = isset($item['title']) ? $item['title'] : $query;
-                            $title = str_replace('\"}', '', $title);
-                            $title = str_replace('\"', '"', $title);
-                            $title = preg_replace('/\s+/', ' ', $title);
-                            $title = trim($title);
-                            
-                            return [
-                                'video_id' => $video_id,
-                                'title' => $title,
-                                'channel' => isset($item['channel']) ? $item['channel'] : '',
-                                'thumbnail' => isset($item['thumbnail']) ? $item['thumbnail'] : ''
-                            ];
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Fallback: coba pencarian alternatif
-    return getYouTubeFallback($query);
-}
-
-function getYouTubeFallback($query) {
-    // Fallback sederhana
-    $clean_query = urlencode($query . ' audio official');
-    
-    // Buat URL pencarian YouTube
-    $search_url = "https://www.youtube.com/results?search_query=" . $clean_query;
-    
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $search_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    
-    $response = curl_exec($ch);
-    curl_close($ch);
-    
-    // Cari video ID di halaman
-    if (preg_match('/"videoId":"([^"]{11})"/', $response, $matches)) {
-        $video_id = $matches[1];
-        
-        return [
-            'video_id' => $video_id,
-            'title' => $query,
-            'channel' => '',
-            'thumbnail' => ''
-        ];
-    }
-    
-    return [
-        'video_id' => null,
-        'title' => $query,
-        'channel' => '',
-        'thumbnail' => ''
-    ];
-}
-
-// ===== VERIFIKASI RECAPTCHA =====
-
-function verifyRecaptcha($recaptcha_response) {
-    $recaptcha_secret_key = '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
-    
-    if (empty($recaptcha_response)) {
-        return false;
-    }
-    
-    $url = 'https://www.google.com/recaptcha/api/siteverify';
-    $data = array(
-        'secret' => $recaptcha_secret_key,
-        'response' => $recaptcha_response,
-        'remoteip' => $_SERVER['REMOTE_ADDR']
-    );
-    
-    $options = array(
-        'http' => array(
-            'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
-            'method'  => 'POST',
-            'content' => http_build_query($data)
-        )
-    );
-    
-    $context = stream_context_create($options);
-    $result = file_get_contents($url, false, $context);
-    $response = json_decode($result);
-    
-    return $response->success;
-}
-
-// ===== PROSES =====
-
-$page = 'home';
-$ip = $_SERVER['REMOTE_ADDR'];
-
-// LOGIN
-if (isset($_POST['login'])) {
-    if ($_POST['username'] == $admin_user && $_POST['password'] == $admin_pass) {
-        $_SESSION['admin'] = true;
-        header('Location: ?admin');
-        exit;
-    }
-}
-
-// LOGOUT
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header('Location: ?');
-    exit;
-}
-
-// SUBMIT LAGU
-if (isset($_POST['submit_lagu'])) {
-    $lagu = trim($_POST['lagu'] ?? '');
-    $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
-    
-    if (!empty($lagu)) {
-        // Verifikasi reCAPTCHA
-        if (!verifyRecaptcha($recaptcha_response)) {
-            $_SESSION['error'] = "Harap verifikasi bahwa Anda bukan robot";
-            header('Location: ?');
-            exit;
-        }
-
-        $badword = cekBadwords($lagu);
-        if ($badword !== false) {
-            $_SESSION['error'] = "Terdapat kata tidak pantas";
-            header('Location: ?');
-            exit;
-        }
-        
-        $cooldown = cekCooldown($ip);
-        
-        if ($cooldown === false) {
-            simpanLagu($lagu);
-            setCooldown($ip);
-            $_SESSION['last_lagu'] = $lagu;
-            header('Location: ?thankyou');
-            exit;
-        } else {
-            $_SESSION['error'] = "Tunggu $cooldown detik";
-            header('Location: ?');
-            exit;
-        }
-    }
-}
-
-// ADMIN ACTION
-if (isset($_SESSION['admin']) && isset($_GET['action'])) {
-    $id = $_GET['id'] ?? '';
-    
-    if ($_GET['action'] == 'delete' && $id) {
-        $data = bacaLagu();
-        $new_content = "";
-        
-        foreach ($data as $item) {
-            if ($item['id'] != $id) {
-                $new_content .= "[{$item['id']}]\n" .
-                               "judul={$item['judul']}\n" .
-                               "waktu={$item['waktu']}\n" .
-                               "status={$item['status']}\n" .
-                               "ip={$item['ip']}\n" .
-                               "---\n";
-            }
-        }
-        
-        file_put_contents($data_file, $new_content);
-        header('Location: ?admin');
-        exit;
-    }
-    
-    if ($_GET['action'] == 'update' && $id && isset($_GET['status'])) {
-        $data = bacaLagu();
-        $new_content = "";
-        
-        foreach ($data as $item) {
-            if ($item['id'] == $id) {
-                $item['status'] = $_GET['status'];
-            }
-            
-            $new_content .= "[{$item['id']}]\n" .
-                           "judul={$item['judul']}\n" .
-                           "waktu={$item['waktu']}\n" .
-                           "status={$item['status']}\n" .
-                           "ip={$item['ip']}\n" .
-                           "---\n";
-        }
-        
-        file_put_contents($data_file, $new_content);
-        header('Location: ?admin');
-        exit;
-    }
-}
-
-// TENTUKAN HALAMAN
-if (isset($_GET['admin'])) {
-    $page = isset($_SESSION['admin']) ? 'admin' : 'login';
-} elseif (isset($_GET['thankyou'])) {
-    $page = 'thankyou';
-}
-
-// AMBIL DATA
-$lagu_list = bacaLagu();
-$cooldown_left = cekCooldown($ip);
-
-// ERROR
-$error = $_SESSION['error'] ?? '';
-unset($_SESSION['error']);
-
-?>
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Request Lagu</title>
+    <title>MeTube - No Ads, Pure Content</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📺</text></svg>">
     <style>
-        :root {
-            --bg-primary: #ffffff;
-            --bg-secondary: #fafafa;
-            --bg-tertiary: #f5f5f5;
-            --border: #eaeaea;
-            --text-primary: #000000;
-            --text-secondary: #666666;
-            --text-tertiary: #888888;
-            --accent: #0070f3;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-        }
-        
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-primary: #000000;
-                --bg-secondary: #111111;
-                --bg-tertiary: #222222;
-                --border: #333333;
-                --text-primary: #ffffff;
-                --text-secondary: #888888;
-                --text-tertiary: #666666;
-                --accent: #0070f3;
-            }
-        }
-        
+        /* ===== RESET & BASE STYLES ===== */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
         }
-        
+
         body {
-            background: var(--bg-primary);
-            color: var(--text-primary);
+            background-color: #000;
+            color: #fff;
             min-height: 100vh;
-            transition: all 0.2s;
+            transition: all 0.3s;
         }
-        
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 0 20px;
+
+        /* ===== BLACK & WHITE THEME ===== */
+        .black-white-mode {
+            filter: grayscale(100%) contrast(120%);
         }
-        
-        header {
-            text-align: center;
-            padding: 60px 0 40px;
-            border-bottom: 1px solid var(--border);
-            margin-bottom: 40px;
-        }
-        
-        h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-        }
-        
-        .card {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 30px;
-            margin-bottom: 20px;
-        }
-        
-        input[type="text"], input[type="password"] {
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            margin-bottom: 15px;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-        }
-        
-        input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-        
-        button, .btn {
-            padding: 12px 24px;
-            background: var(--text-primary);
-            color: var(--bg-primary);
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-            transition: opacity 0.2s;
-        }
-        
-        button:hover, .btn:hover {
-            opacity: 0.8;
-        }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .btn-outline {
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-        }
-        
-        .btn-outline:hover {
-            background: var(--bg-secondary);
-        }
-        
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 14px;
-        }
-        
-        .alert {
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            border-left: 4px solid;
-        }
-        
-        .alert-error {
-            border-left-color: var(--danger);
-            background: rgba(239, 68, 68, 0.1);
-            color: var(--danger);
-        }
-        
-        .alert-success {
-            border-left-color: var(--success);
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success);
-        }
-        
-        .lagu-item {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .lagu-header {
+
+        /* ===== NAVBAR ===== */
+        .navbar {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 15px;
+            align-items: center;
+            padding: 12px 24px;
+            background-color: #111;
+            border-bottom: 1px solid #333;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
-        
-        .lagu-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            line-height: 1.4;
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
         }
-        
-        .lagu-meta {
-            color: var(--text-tertiary);
-            font-size: 14px;
-            margin-bottom: 20px;
-        }
-        
-        .youtube-player {
-            width: 100%;
-            aspect-ratio: 16/9;
-            background: #000;
-            border-radius: 6px;
-            overflow: hidden;
-            margin: 20px 0;
-            position: relative;
-        }
-        
-        .youtube-player iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-            display: block;
-        }
-        
-        .video-title {
-            margin-top: 10px;
-            font-size: 14px;
-            color: var(--text-secondary);
+
+        .menu-btn {
+            font-size: 24px;
+            cursor: pointer;
             padding: 8px;
-            background: var(--bg-secondary);
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+
+        .menu-btn:hover {
+            background-color: #333;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 900;
+            letter-spacing: -1px;
+        }
+
+        .logo-black {
+            color: #000;
+            background-color: #fff;
+            padding: 4px 8px;
             border-radius: 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
         }
-        
-        .video-channel {
-            font-size: 12px;
-            color: var(--text-tertiary);
-            margin-top: 5px;
+
+        .logo-white {
+            color: #fff;
         }
-        
-        .status {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 10px;
-        }
-        
-        .status.pending {
-            background: rgba(245, 158, 11, 0.1);
-            color: var(--warning);
-        }
-        
-        .status.playing {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success);
-        }
-        
-        .status.done {
-            background: rgba(107, 114, 128, 0.1);
-            color: #6b7280;
-        }
-        
-        .actions {
+
+        .search-bar {
             display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
+            flex: 0 1 600px;
+            margin: 0 20px;
         }
-        
-        .nav {
+
+        #searchInput {
+            flex: 1;
+            padding: 12px 20px;
+            background-color: #222;
+            border: 1px solid #333;
+            border-right: none;
+            color: white;
+            font-size: 16px;
+            border-radius: 40px 0 0 40px;
+            outline: none;
+        }
+
+        #searchInput:focus {
+            border-color: #555;
+        }
+
+        #searchBtn {
+            padding: 12px 24px;
+            background-color: #222;
+            border: 1px solid #333;
+            border-left: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 0 40px 40px 0;
+            font-size: 18px;
+            transition: background 0.2s;
+        }
+
+        #searchBtn:hover {
+            background-color: #333;
+        }
+
+        .nav-right {
             display: flex;
-            gap: 10px;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #myselfToggle {
+            padding: 10px 20px;
+            background: linear-gradient(45deg, #000, #333);
+            color: white;
+            border: 1px solid #555;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        #myselfToggle:hover {
+            background: linear-gradient(45deg, #222, #444);
+            transform: translateY(-2px);
+        }
+
+        #themeToggle {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background-color: #222;
+            border: 1px solid #333;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #themeToggle:hover {
+            background-color: #333;
+            transform: rotate(30deg);
+        }
+
+        /* ===== CONTAINER LAYOUT ===== */
+        .container {
+            display: flex;
+            min-height: calc(100vh - 70px);
+        }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            width: 240px;
+            background-color: #111;
+            padding: 20px 0;
+            border-right: 1px solid #333;
+            overflow-y: auto;
+            transition: all 0.3s;
+        }
+
+        .sidebar-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transition: background 0.2s;
+        }
+
+        .sidebar-item:hover {
+            background-color: #222;
+        }
+
+        .sidebar-item.active {
+            background-color: #333;
+            border-left: 4px solid white;
+        }
+
+        .sidebar hr {
+            border: none;
+            border-top: 1px solid #333;
+            margin: 20px 0;
+        }
+
+        .myself-panel {
+            padding: 20px;
+            background-color: #1a1a1a;
+            border-radius: 12px;
+            margin: 15px;
+            border: 1px solid #333;
+        }
+
+        .myself-panel h4 {
+            margin-bottom: 15px;
+            color: #aaa;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .myself-panel div {
+            margin-bottom: 10px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #resetProfile {
+            width: 100%;
+            padding: 10px;
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+
+        #resetProfile:hover {
+            background-color: #444;
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        .main-content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .welcome-section {
             margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border);
-            flex-wrap: wrap;
+            padding: 20px;
+            background: linear-gradient(90deg, #111, #222);
+            border-radius: 12px;
+            border-left: 4px solid white;
         }
-        
-        .login-form {
-            max-width: 400px;
-            margin: 100px auto;
-        }
-        
-        .thankyou {
-            text-align: center;
-            padding: 80px 20px;
-        }
-        
-        .thankyou-title {
-            font-size: 2rem;
-            font-weight: 700;
+
+        .welcome-section h2 {
+            font-size: 28px;
             margin-bottom: 10px;
         }
-        
-        .thankyou-song {
-            font-size: 1.25rem;
-            color: var(--accent);
-            margin: 20px 0;
+
+        .welcome-section p {
+            color: #aaa;
+            max-width: 800px;
+        }
+
+        .section-title {
+            font-size: 22px;
+            margin: 30px 0 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #333;
+        }
+
+        /* ===== VIDEO GRID ===== */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 24px;
+            margin-top: 20px;
+        }
+
+        .video-card {
+            background-color: #1a1a1a;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid #333;
+        }
+
+        .video-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            border-color: #555;
+        }
+
+        .thumbnail-container {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 aspect ratio */
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        .thumbnail {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-duration {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .video-info {
             padding: 15px;
-            background: var(--bg-secondary);
-            border-radius: 6px;
         }
-        
-        .timer {
-            font-family: 'Courier New', monospace;
-            font-size: 3rem;
-            font-weight: 700;
-            margin: 20px 0;
-            color: var(--text-primary);
+
+        .video-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
         }
-        
-        footer {
-            text-align: center;
-            padding: 40px 0;
-            margin-top: 60px;
-            color: var(--text-tertiary);
-            border-top: 1px solid var(--border);
+
+        .video-channel {
+            color: #aaa;
             font-size: 14px;
+            margin-bottom: 6px;
         }
-        
-        .g-recaptcha {
-            margin: 20px 0;
+
+        .video-meta {
+            display: flex;
+            justify-content: space-between;
+            color: #888;
+            font-size: 13px;
+        }
+
+        /* ===== VIDEO PLAYER MODAL ===== */
+        .player-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .player-content {
+            width: 100%;
+            max-width: 1100px;
+            background-color: #111;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .close-player {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+
+        .close-player:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .player-frame {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: #000;
             display: flex;
             justify-content: center;
+            align-items: center;
+            position: relative;
         }
-        
-        .video-info {
-            margin-top: 10px;
-            font-size: 14px;
-            color: var(--text-secondary);
-            padding: 8px;
-            background: var(--bg-secondary);
-            border-radius: 4px;
+
+        .player-placeholder {
+            color: #aaa;
+            font-size: 18px;
+            text-align: center;
         }
-        
+
+        .player-info {
+            padding: 20px;
+        }
+
+        .player-title {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .reaction-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .reaction {
+            padding: 10px 20px;
+            background-color: #222;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .reaction:hover {
+            background-color: #333;
+            transform: scale(1.05);
+        }
+
+        /* ===== LOADING INDICATOR ===== */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            grid-column: 1 / -1;
+        }
+
+        .spinner {
+            border: 4px solid #333;
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* ===== RESPONSIVE DESIGN ===== */
+        @media (max-width: 1200px) {
+            .video-grid {
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            }
+        }
+
         @media (max-width: 768px) {
             .container {
-                padding: 0 15px;
-            }
-            
-            header {
-                padding: 40px 0 30px;
-            }
-            
-            h1 {
-                font-size: 2rem;
-            }
-            
-            .lagu-header {
                 flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: auto;
+                padding: 10px 0;
+                display: flex;
+                overflow-x: auto;
+                border-right: none;
+                border-bottom: 1px solid #333;
+            }
+            
+            .sidebar-item {
+                padding: 10px 15px;
+                white-space: nowrap;
+            }
+            
+            .myself-panel {
+                display: none;
+            }
+            
+            .search-bar {
+                flex: 1;
+            }
+            
+            .navbar {
+                padding: 10px 15px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .video-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .nav-right {
                 gap: 10px;
             }
             
-            .nav {
-                flex-direction: column;
+            #myselfToggle {
+                padding: 8px 12px;
+                font-size: 14px;
             }
             
-            .btn, button {
-                width: 100%;
-                text-align: center;
-            }
-            
-            .g-recaptcha {
-                transform: scale(0.9);
-                transform-origin: center;
+            .logo {
+                font-size: 22px;
             }
         }
+
+        /* ===== MY SELF INDICATOR ===== */
+        .myself-active {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #111;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
     </style>
-    <!-- Google reCAPTCHA v2 Script -->
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
-<body>
+<body class="black-white-mode">
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <div class="nav-left">
+            <div class="menu-btn" id="menuBtn">☰</div>
+            <div class="logo">
+                <span class="logo-black">ME</span><span class="logo-white">TUBE</span>
+            </div>
+        </div>
+        
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Search video tanpa iklan...">
+            <button id="searchBtn">🔍</button>
+        </div>
+        
+        <div class="nav-right">
+            <button id="myselfToggle">MY SELF: OFF</button>
+            <button id="themeToggle">🌓</button>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTAINER -->
     <div class="container">
-        <?php if ($page == 'home'): ?>
-            <header>
-                <h1>Request Lagu</h1>
-                <p class="subtitle">Kirim request lagu untuk diputar</p>
-            </header>
-            
-            <?php if ($error): ?>
-                <div class="alert alert-error">
-                    <?= htmlspecialchars($error) ?>
-                </div>
-            <?php endif; ?>
-            
-            <div class="card">
-                <form method="POST" id="laguForm">
-                    <input type="text" 
-                           name="lagu" 
-                           placeholder="Judul lagu dan artis"
-                           required
-                           autocomplete="off"
-                           maxlength="100"
-                           id="laguInput">
-                    
-                    <!-- Google reCAPTCHA v2 -->
-                    <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
-                    
-                    <button type="submit" 
-                            name="submit_lagu"
-                            id="submitBtn"
-                            <?= $cooldown_left ? 'disabled' : '' ?>>
-                        <?php if ($cooldown_left): ?>
-                            Tunggu <?= $cooldown_left ?> detik
-                        <?php else: ?>
-                            Kirim Request
-                        <?php endif; ?>
-                    </button>
-                </form>
+        <!-- SIDEBAR -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-item active">🏠 Beranda</div>
+            <div class="sidebar-item">🔥 Trending</div>
+            <div class="sidebar-item">📺 Subscriptions</div>
+            <div class="sidebar-item">⏳ History</div>
+            <div class="sidebar-item">💾 Watch Later</div>
+            <div class="sidebar-item">❤️ Liked Videos</div>
+            <hr>
+            <div class="myself-panel" id="myselfPanel">
+                <h4>MY SELF PROFILE</h4>
+                <div>Mood: <span id="userMood">Neutral</span></div>
+                <div>Total Watch: <span id="watchTime">0h 0m</span></div>
+                <div>Genre Favorit: <span id="preference">Loading...</span></div>
+                <div>Searches: <span id="searchCount">0</span></div>
+                <div>Skip Rate: <span id="skipRate">0%</span></div>
+                <button id="resetProfile">Reset Profile</button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+            <div class="welcome-section">
+                <h2>Selamat Datang di MeTube</h2>
+                <p>YouTube tanpa iklan yang mempelajari preferensi Anda. Sistem "My Self" akan merekam interaksi Anda untuk menampilkan konten yang lebih relevan.</p>
             </div>
             
-            <div style="text-align: center; margin-top: 20px;">
-                <a href="?admin" class="btn btn-outline">Login Admin</a>
+            <h3 class="section-title">Video Untuk Anda</h3>
+            
+            <!-- VIDEO GRID -->
+            <div class="video-grid" id="videoGrid">
+                <!-- Video cards akan dimuat di sini -->
             </div>
             
-            <footer>
-                <p>© <?= date('Y') ?> • Sistem Request Lagu</p>
-            </footer>
-            
-        <?php elseif ($page == 'thankyou'): ?>
-            <div class="thankyou">
-                <h1 class="thankyou-title">Request Berhasil</h1>
-                
-                <div class="thankyou-song">
-                    "<?= htmlspecialchars($_SESSION['last_lagu'] ?? '') ?>"
-                </div>
-                
-                <div class="card" style="max-width: 300px; margin: 0 auto;">
-                    <div class="timer" id="countdown">90</div>
-                    <p style="color: var(--text-tertiary);">detik cooldown</p>
-                </div>
-                
-                <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
-                    <a href="?" class="btn">Request Lain</a>
-                    <a href="?admin" class="btn btn-outline">Lihat Inbox</a>
-                </div>
+            <!-- LOADING INDICATOR -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Memuat video...</p>
             </div>
-            
-        <?php elseif ($page == 'admin' && isset($_SESSION['admin'])): ?>
-            <header>
-                <h1>Admin Inbox</h1>
-                <p class="subtitle">Kelola request lagu</p>
-            </header>
-            
-            <div class="nav">
-                <a href="?admin" class="btn">
-                    Inbox (<?= count($lagu_list) ?>)
-                </a>
-                <a href="?" class="btn btn-outline">Home</a>
-                <a href="?logout" class="btn btn-outline">Logout</a>
-            </div>
-            
-            <?php if (empty($lagu_list)): ?>
-                <div class="card" style="text-align: center; padding: 60px 20px;">
-                    <p style="color: var(--text-tertiary);">Belum ada request</p>
-                </div>
-            <?php else: ?>
-                <?php 
-                $first_playing_index = null;
-                $video_data = [];
-                
-                foreach ($lagu_list as $index => $lagu) {
-                    if ($lagu['status'] == 'playing' && $first_playing_index === null) {
-                        $first_playing_index = $index;
-                    }
-                    $video_data[$index] = getYouTubeFromAPI($lagu['judul']);
-                }
-                ?>
-                
-                <?php foreach ($lagu_list as $index => $lagu): ?>
-                    <?php $video_info = $video_data[$index]; ?>
-                    <div class="lagu-item" data-index="<?= $index ?>" data-status="<?= $lagu['status'] ?>">
-                        <div class="lagu-header">
-                            <div>
-                                <div class="lagu-title">
-                                    <?= htmlspecialchars($lagu['judul']) ?>
-                                    <span class="status <?= $lagu['status'] ?>">
-                                        <?= strtoupper($lagu['status']) ?>
-                                    </span>
-                                </div>
-                                <div class="lagu-meta">
-                                    <?= $lagu['waktu'] ?> • 
-                                    <?= $lagu['ip'] ?>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="youtube-player">
-                            <?php if (!empty($video_info['video_id'])): ?>
-                                <iframe 
-                                    src="https://www.youtube.com/embed/<?= $video_info['video_id'] ?>?rel=0&controls=1&modestbranding=1"
-                                    frameborder="0"
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                    allowfullscreen>
-                                </iframe>
-                            <?php else: ?>
-                                <div style="height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; color: white;">
-                                    <div style="text-align: center; padding: 20px;">
-                                        <div style="font-size: 48px; margin-bottom: 10px;">🎵</div>
-                                        <p>Video tidak ditemukan</p>
-                                        <p style="font-size: 12px; opacity: 0.7; margin-top: 10px;">
-                                            <?= htmlspecialchars($lagu['judul']) ?>
-                                        </p>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <?php if (!empty($video_info['title'])): ?>
-                            <div class="video-info">
-                                <div class="video-title" title="<?= htmlspecialchars($video_info['title']) ?>">
-                                    <strong>🎵</strong> <?= htmlspecialchars($video_info['title']) ?>
-                                </div>
-                                <?php if (!empty($video_info['channel'])): ?>
-                                    <div class="video-channel">
-                                        <strong>👤</strong> <?= htmlspecialchars($video_info['channel']) ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <div class="actions">
-                            <?php if ($lagu['status'] == 'pending'): ?>
-                                <a href="?admin&action=update&id=<?= $lagu['id'] ?>&status=playing" 
-                                   class="btn btn-small">
-                                    ▶ Playing
-                                </a>
-                            <?php endif; ?>
-                            
-                            <?php if ($lagu['status'] == 'playing'): ?>
-                                <a href="?admin&action=update&id=<?= $lagu['id'] ?>&status=done" 
-                                   class="btn btn-small">
-                                    ✅ Selesai
-                                </a>
-                            <?php endif; ?>
-                            
-                            <a href="?admin&action=delete&id=<?= $lagu['id'] ?>" 
-                               class="btn btn-small btn-outline"
-                               onclick="return confirm('Hapus request ini?')">
-                                🗑️ Hapus
-                            </a>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
-            
-            <footer>
-                <p>Total request: <?= count($lagu_list) ?></p>
-            </footer>
-            
-        <?php else: ?>
-            <div class="login-form">
-                <div class="card">
-                    <h2 style="text-align: center; margin-bottom: 30px;">Login Admin</h2>
-                    <form method="POST">
-                        <input type="text" name="username" placeholder="Username" required>
-                        <input type="password" name="password" placeholder="Password" required>
-                        <button type="submit" name="login" style="width: 100%;">Login</button>
-                    </form>
-                    <div style="text-align: center; margin-top: 20px;">
-                        <a href="?" class="btn btn-outline">← Kembali</a>
-                    </div>
-                </div>
-            </div>
-        <?php endif; ?>
+        </main>
     </div>
-    
+
+    <!-- VIDEO PLAYER MODAL -->
+    <div class="player-modal" id="playerModal">
+        <div class="player-content">
+            <button class="close-player" id="closePlayer">&times;</button>
+            <div class="player-frame">
+                <div class="player-placeholder" id="playerPlaceholder">
+                    Video akan diputar di sini
+                </div>
+            </div>
+            <div class="player-info">
+                <h2 class="player-title" id="playerTitle">Judul Video</h2>
+                <div class="reaction-buttons">
+                    <button class="reaction" data-action="like">👍 Like</button>
+                    <button class="reaction" data-action="skip">⏭️ Skip</button>
+                    <button class="reaction" data-action="finish">✅ Finish</button>
+                    <button class="reaction" data-action="share">🔗 Share</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MY SELF INDICATOR -->
+    <div class="myself-active" id="myselfIndicator" style="display: none;">
+        <span style="font-size: 24px;">👁️</span>
+    </div>
+
     <script>
-        // ===== COOLDOWN TIMER =====
-        <?php if ($page == 'home' && $cooldown_left): ?>
-        let timeLeft = <?= $cooldown_left ?>;
-        const submitBtn = document.getElementById('submitBtn');
-        
-        const timer = setInterval(() => {
-            timeLeft--;
-            submitBtn.innerHTML = 'Tunggu ' + timeLeft + ' detik';
-            
-            if (timeLeft <= 0) {
-                clearInterval(timer);
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = 'Kirim Request';
+        // ===== GLOBAL VARIABLES =====
+        let myselfActive = false;
+        let myselfProfile = null;
+        let currentVideos = [];
+
+        // ===== MY SELF SYSTEM =====
+        class MyselfSystem {
+            constructor() {
+                this.loadProfile();
+                this.initTracking();
             }
-        }, 1000);
-        <?php endif; ?>
-        
-        // ===== THANK YOU TIMER =====
-        <?php if ($page == 'thankyou'): ?>
-        let countdown = 90;
-        const countdownEl = document.getElementById('countdown');
-        
-        const thankyouTimer = setInterval(() => {
-            countdown--;
-            if (countdownEl) countdownEl.textContent = countdown;
-            
-            if (countdown <= 0) {
-                clearInterval(thankyouTimer);
-                window.location.href = '?';
+
+            loadProfile() {
+                const saved = localStorage.getItem('metube_profile');
+                if (saved) {
+                    myselfProfile = JSON.parse(saved);
+                    console.log('Profile loaded:', myselfProfile);
+                } else {
+                    myselfProfile = {
+                        id: Date.now().toString(36),
+                        created: new Date().toISOString(),
+                        preferences: {
+                            genres: {},
+                            watchHistory: [],
+                            reactionHistory: [],
+                            searchHistory: [],
+                            watchPatterns: {
+                                averageWatchTime: 0,
+                                preferredDuration: 'medium',
+                                skipRate: 0,
+                                peakHours: []
+                            }
+                        },
+                        mood: 'neutral',
+                        totalWatchSeconds: 0,
+                        lastActive: new Date().toISOString()
+                    };
+                    this.saveProfile();
+                }
+                this.updateProfileDisplay();
             }
-        }, 1000);
-        
-        setTimeout(() => {
-            window.location.href = '?';
-        }, 90000);
-        <?php endif; ?>
+
+            saveProfile() {
+                myselfProfile.lastActive = new Date().toISOString();
+                localStorage.setItem('metube_profile', JSON.stringify(myselfProfile));
+            }
+
+            initTracking() {
+                // Track mouse movements
+                let mousePositions = [];
+                document.addEventListener('mousemove', (e) => {
+                    if (!myselfActive) return;
+                    
+                    mousePositions.push({ x: e.clientX, y: e.clientY, time: Date.now() });
+                    
+                    // Keep only last 50 positions
+                    if (mousePositions.length > 50) {
+                        mousePositions.shift();
+                    }
+                    
+                    // Detect rapid movements (excitement)
+                    if (mousePositions.length >= 10) {
+                        const recent = mousePositions.slice(-10);
+                        const totalDistance = recent.reduce((sum, pos, i) => {
+                            if (i === 0) return sum;
+                            const prev = recent[i-1];
+                            const distance = Math.sqrt(
+                                Math.pow(pos.x - prev.x, 2) + Math.pow(pos.y - prev.y, 2)
+                            );
+                            return sum + distance;
+                        }, 0);
+                        
+                        if (totalDistance > 5000) { // Threshold for excitement
+                            myselfProfile.mood = 'excited';
+                        } else if (totalDistance < 1000) {
+                            myselfProfile.mood = 'focused';
+                        }
+                    }
+                });
+
+                // Track scroll behavior
+                let lastScrollTime = Date.now();
+                window.addEventListener('scroll', () => {
+                    if (!myselfActive) return;
+                    
+                    const now = Date.now();
+                    const timeSinceLastScroll = now - lastScrollTime;
+                    
+                    // Fast scrolling indicates impatience
+                    if (timeSinceLastScroll < 200) {
+                        myselfProfile.mood = 'impatient';
+                    }
+                    
+                    lastScrollTime = now;
+                });
+
+                // Track video interactions
+                document.addEventListener('click', (e) => {
+                    if (!myselfActive) return;
+                    
+                    const target = e.target;
+                    if (target.closest('.video-card')) {
+                        this.recordInteraction('video_click');
+                    }
+                });
+            }
+
+            recordSearch(query) {
+                if (!myselfActive || !query.trim()) return;
+                
+                myselfProfile.preferences.searchHistory.push({
+                    query: query,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Keep only last 20 searches
+                if (myselfProfile.preferences.searchHistory.length > 20) {
+                    myselfProfile.preferences.searchHistory.shift();
+                }
+                
+                // Analyze search patterns
+                this.analyzeSearchPatterns();
+                this.saveProfile();
+                this.updateProfileDisplay();
+            }
+
+            recordVideoInteraction(videoId, action, metadata = {}) {
+                if (!myselfActive) return;
+                
+                myselfProfile.preferences.reactionHistory.push({
+                    videoId,
+                    action,
+                    timestamp: new Date().toISOString(),
+                    ...metadata
+                });
+                
+                // Update skip rate
+                const totalReactions = myselfProfile.preferences.reactionHistory.length;
+                const skips = myselfProfile.preferences.reactionHistory.filter(r => r.action === 'skip').length;
+                myselfProfile.preferences.watchPatterns.skipRate = totalReactions > 0 ? (skips / totalReactions) * 100 : 0;
+                
+                // Update watch time if action is 'finish'
+                if (action === 'finish' && metadata.duration) {
+                    myselfProfile.totalWatchSeconds += metadata.duration;
+                }
+                
+                this.saveProfile();
+                this.updateProfileDisplay();
+            }
+
+            analyzeSearchPatterns() {
+                // Simple genre detection based on search keywords
+                const searches = myselfProfile.preferences.searchHistory.map(s => s.query.toLowerCase());
+                
+                const genreKeywords = {
+                    'gaming': ['game', 'gaming', 'playthrough', 'stream', 'esports'],
+                    'music': ['music', 'song', 'mv', 'audio', 'lyrics'],
+                    'education': ['tutorial', 'how to', 'learn', 'course', 'education'],
+                    'sports': ['sport', 'football', 'basketball', 'match', 'highlights'],
+                    'entertainment': ['funny', 'comedy', 'entertainment', 'vlog', 'prank']
+                };
+                
+                const genreCounts = {};
+                
+                searches.forEach(search => {
+                    for (const [genre, keywords] of Object.entries(genreKeywords)) {
+                        if (keywords.some(keyword => search.includes(keyword))) {
+                            genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+                        }
+                    }
+                });
+                
+                // Update genre preferences
+                myselfProfile.preferences.genres = genreCounts;
+            }
+
+            updateProfileDisplay() {
+                // Update UI elements with profile data
+                document.getElementById('userMood').textContent = myselfProfile.mood;
+                
+                // Format watch time
+                const hours = Math.floor(myselfProfile.totalWatchSeconds / 3600);
+                const minutes = Math.floor((myselfProfile.totalWatchSeconds % 3600) / 60);
+                document.getElementById('watchTime').textContent = `${hours}h ${minutes}m`;
+                
+                // Get top genre
+                const genres = myselfProfile.preferences.genres;
+                let topGenre = 'Belum ada data';
+                let maxCount = 0;
+                
+                for (const [genre, count] of Object.entries(genres)) {
+                    if (count > maxCount) {
+                        maxCount = count;
+                        topGenre = genre;
+                    }
+                }
+                
+                document.getElementById('preference').textContent = topGenre;
+                document.getElementById('searchCount').textContent = myselfProfile.preferences.searchHistory.length;
+                document.getElementById('skipRate').textContent = `${myselfProfile.preferences.watchPatterns.skipRate.toFixed(1)}%`;
+            }
+
+            resetProfile() {
+                if (confirm('Apakah Anda yakin ingin mereset profil My Self? Semua data preferensi akan dihapus.')) {
+                    localStorage.removeItem('metube_profile');
+                    myselfProfile = null;
+                    this.loadProfile();
+                    alert('Profil telah direset!');
+                }
+            }
+        }
+
+        // ===== VIDEO API HANDLER =====
+        class VideoAPI {
+            constructor() {
+                this.baseURL = 'https://api-lb.ct.ws/?api=1&q=';
+            }
+
+            async searchVideos(query) {
+                try {
+                    document.getElementById('loading').style.display = 'block';
+                    
+                    // Simulate API call (in reality, you'd use the actual API)
+                    // For demo purposes, we'll use mock data
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    const mockVideos = this.generateMockVideos(query);
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    return mockVideos;
+                    
+                } catch (error) {
+                    console.error('Error fetching videos:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    return this.generateMockVideos('error');
+                }
+            }
+
+            generateMockVideos(query) {
+                const mockTitles = [
+                    "Beginner's Guide to Web Development",
+                    "The Science of Black Holes Explained",
+                    "10 Cooking Hacks That Will Change Your Life",
+                    "History of Ancient Civilizations",
+                    "Learn JavaScript in 60 Minutes",
+                    "The Future of Artificial Intelligence",
+                    "Music for Focus and Concentration",
+                    "Top 10 Movies of All Time",
+                    "How to Build Your First Mobile App",
+                    "Understanding Quantum Physics",
+                    "The Art of Photography",
+                    "Yoga for Beginners: Complete Guide",
+                    "Exploring the Deep Ocean",
+                    "Financial Freedom in Your 20s",
+                    "The Secrets of Memory Palace"
+                ];
+
+                const mockChannels = [
+                    "Tech Explorers", "Science Simplified", "Cooking Masters", 
+                    "History Channel", "Code Academy", "Future Tech", 
+                    "Music Studio", "Film Buffs", "App Developers",
+                    "Physics Lab", "Creative Arts", "Wellness Journey",
+                    "Ocean Discovery", "Finance Gurus", "Mind Techniques"
+                ];
+
+                const videos = [];
+                
+                for (let i = 0; i < 12; i++) {
+                    const titleIndex = (query.length + i) % mockTitles.length;
+                    const channelIndex = (query.length + i * 2) % mockChannels.length;
+                    
+                    const duration = `${Math.floor(Math.random() * 10) + 5}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
+                    const views = `${(Math.random() * 10 + 1).toFixed(1)}M views`;
+                    const timeAgo = `${Math.floor(Math.random() * 12) + 1} months ago`;
+                    
+                    videos.push({
+                        videoId: `mock_${Date.now()}_${i}`,
+                        title: `${mockTitles[titleIndex]} ${query ? `| ${query}` : ''}`,
+                        channel: mockChannels[channelIndex],
+                        thumbnail: `https://picsum.photos/seed/${query + i}/320/180?grayscale`,
+                        duration: duration,
+                        views: views,
+                        publishedTime: timeAgo
+                    });
+                }
+                
+                return videos;
+            }
+        }
+
+        // ===== UI CONTROLLER =====
+        class UIController {
+            constructor() {
+                this.videoAPI = new VideoAPI();
+                this.myselfSystem = new MyselfSystem();
+                this.initEventListeners();
+                this.loadHomeVideos();
+            }
+
+            initEventListeners() {
+                // Search functionality
+                document.getElementById('searchBtn').addEventListener('click', () => this.handleSearch());
+                document.getElementById('searchInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.handleSearch();
+                });
+
+                // Theme toggle
+                document.getElementById('themeToggle').addEventListener('click', () => {
+                    document.body.classList.toggle('black-white-mode');
+                });
+
+                // My Self toggle
+                document.getElementById('myselfToggle').addEventListener('click', () => {
+                    myselfActive = !myselfActive;
+                    document.getElementById('myselfToggle').textContent = 
+                        `MY SELF: ${myselfActive ? 'ON' : 'OFF'}`;
+                    document.getElementById('myselfIndicator').style.display = 
+                        myselfActive ? 'flex' : 'none';
+                    
+                    if (myselfActive) {
+                        alert('My Self mode aktif! Sistem sekarang mempelajari preferensi Anda.');
+                    }
+                });
+
+                // Reset profile
+                document.getElementById('resetProfile').addEventListener('click', () => {
+                    this.myselfSystem.resetProfile();
+                });
+
+                // Close player modal
+                document.getElementById('closePlayer').addEventListener('click', () => {
+                    document.getElementById('playerModal').style.display = 'none';
+                });
+
+                // Close modal when clicking outside
+                document.getElementById('playerModal').addEventListener('click', (e) => {
+                    if (e.target.id === 'playerModal') {
+                        document.getElementById('playerModal').style.display = 'none';
+                    }
+                });
+
+                // Reaction buttons
+                document.querySelectorAll('.reaction').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const action = e.target.dataset.action;
+                        this.handleReaction(action);
+                    });
+                });
+
+                // Sidebar items
+                document.querySelectorAll('.sidebar-item').forEach((item, index) => {
+                    item.addEventListener('click', () => {
+                        document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+                        item.classList.add('active');
+                        
+                        if (index === 0) {
+                            this.loadHomeVideos();
+                        }
+                    });
+                });
+
+                // Menu button
+                document.getElementById('menuBtn').addEventListener('click', () => {
+                    const sidebar = document.getElementById('sidebar');
+                    sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
+            async handleSearch() {
+                const query = document.getElementById('searchInput').value.trim();
+                if (!query) return;
+                
+                // Record search in My Self system
+                if (myselfActive) {
+                    this.myselfSystem.recordSearch(query);
+                }
+                
+                // Search for videos
+                const videos = await this.videoAPI.searchVideos(query);
+                this.displayVideos(videos);
+            }
+
+            async loadHomeVideos() {
+                const videos = await this.videoAPI.searchVideos('trending');
+                this.displayVideos(videos);
+            }
+
+            displayVideos(videos) {
+                currentVideos = videos;
+                const videoGrid = document.getElementById('videoGrid');
+                videoGrid.innerHTML = '';
+                
+                videos.forEach(video => {
+                    const videoCard = this.createVideoCard(video);
+                    videoGrid.appendChild(videoCard);
+                });
+            }
+
+            createVideoCard(video) {
+                const card = document.createElement('div');
+                card.className = 'video-card';
+                card.dataset.videoId = video.videoId;
+                
+                card.innerHTML = `
+                    <div class="thumbnail-container">
+                        <img src="${video.thumbnail}" alt="${video.title}" class="thumbnail">
+                        <div class="video-duration">${video.duration}</div>
+                    </div>
+                    <div class="video-info">
+                        <h3 class="video-title">${video.title}</h3>
+                        <div class="video-channel">${video.channel}</div>
+                        <div class="video-meta">
+                            <span>${video.views}</span>
+                            <span>${video.publishedTime}</span>
+                        </div>
+                    </div>
+                `;
+                
+                card.addEventListener('click', () => this.openVideoPlayer(video));
+                return card;
+            }
+
+            openVideoPlayer(video) {
+                document.getElementById('playerTitle').textContent = video.title;
+                document.getElementById('playerPlaceholder').innerHTML = `
+                    <div style="padding: 20px;">
+                        <h3>${video.title}</h3>
+                        <p>Channel: ${video.channel}</p>
+                        <p>Durasi: ${video.duration} • Ditonton: ${video.views}</p>
+                        <p><em>Mode demo: Player sebenarnya akan menggunakan videoId: ${video.videoId}</em></p>
+                    </div>
+                `;
+                
+                document.getElementById('playerModal').style.display = 'flex';
+                
+                // Record video view in My Self system
+                if (myselfActive) {
+                    const durationSeconds = this.parseDurationToSeconds(video.duration);
+                    this.myselfSystem.recordVideoInteraction(video.videoId, 'view', {
+                        title: video.title,
+                        channel: video.channel,
+                        duration: durationSeconds
+                    });
+                }
+            }
+
+            parseDurationToSeconds(duration) {
+                // Convert "5:30" to 330 seconds
+                const parts = duration.split(':');
+                if (parts.length === 2) {
+                    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                }
+                return 0;
+            }
+
+            handleReaction(action) {
+                if (!myselfActive) {
+                    alert('Aktifkan My Self mode terlebih dahulu untuk mereaksi video!');
+                    return;
+                }
+                
+                const videoId = 'current_video'; // In reality, get from current video
+                const videoTitle = document.getElementById('playerTitle').textContent;
+                
+                this.myselfSystem.recordVideoInteraction(videoId, action, {
+                    title: videoTitle,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Show feedback
+                const feedback = {
+                    'like': 'Video disukai!',
+                    'skip': 'Video dilewati!',
+                    'finish': 'Video selesai ditonton!',
+                    'share': 'Video dibagikan!'
+                };
+                
+                alert(feedback[action]);
+                
+                // If skip or finish, close player
+                if (action === 'skip' || action === 'finish') {
+                    document.getElementById('playerModal').style.display = 'none';
+                    
+                    // Load new video recommendation
+                    if (action === 'skip' && myselfActive) {
+                        setTimeout(() => {
+                            this.loadHomeVideos();
+                        }, 500);
+                    }
+                }
+            }
+        }
+
+        // ===== INITIALIZE APP =====
+        document.addEventListener('DOMContentLoaded', () => {
+            const app = new UIController();
+            
+            // Welcome message
+            setTimeout(() => {
+                console.log(`
+╔══════════════════════════════════════╗
+║         🎬 MeTube Loaded! 🎬         ║
+║                                      ║
+║  Fitur:                              ║
+║  • YouTube tanpa iklan              ║
+║  • Sistem My Self (AI Tracking)     ║
+║  • Black & White aesthetic          ║
+║  • LocalStorage untuk preferensi    ║
+║                                      ║
+║  Aktifkan "MY SELF" untuk mulai!    ║
+╚══════════════════════════════════════╝
+                `);
+            }, 1000);
+        });
     </script>
 </body>
-</html>
+    </html>
