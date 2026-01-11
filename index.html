@@ -1,160 +1,988 @@
+<?php
+
+session_start();
+
+// ===== KONFIGURASI =====
+
+$admin_user = 'admin';
+$admin_pass = 'osis26pkt';
+$data_file = 'lagu.txt';
+$cooldown_file = 'cooldown.txt';
+
+// ===== DAFTAR BADWORDS =====
+
+$badwords = [
+    'anjing', 'bangsat', 'kontol', 'memek', 'ngentot', 'jancok', 'bajingan',
+    'asu', 'anjir', 'goblok', 'bodoh', 'tolol', 'idiot', 'bego', 'fuck',
+    'shit', 'bitch', 'asshole', 'dick', 'pussy', 'bastard', 'motherfucker',
+    'cibai', 'pukimak', 'babi', 'monyet', 'kunyuk', 'kirik', 'taik', 'tai',
+    'ewe', 'perek', 'pepek', 'tete', 'toket', 'ngentod', 'ngentit', 'pantek',
+    'lonte', 'bencong', 'banci', 'kafir', 'haram', 'sialan', 'brengsek',
+    'jembut', 'tempik', 'tempek', 'coli', 'masturbasi', 'sepong', 'blowjob'
+];
+
+// ===== FUNGSI UTAMA =====
+
+function cekBadwords($text) {
+    global $badwords;
+    $text_lower = strtolower($text);
+    
+    foreach ($badwords as $kata) {
+        if (strpos($text_lower, $kata) !== false) {
+            return $kata;
+        }
+    }
+    return false;
+}
+
+function simpanLagu($lagu) {
+    global $data_file;
+    $id = time() . rand(100,999);
+    $waktu = date('d/m/Y H:i:s');
+    $ip = $_SERVER['REMOTE_ADDR'];
+    
+    $lagu_filtered = filterBadwords($lagu);
+    
+    $data = "[$id]\n" .
+            "judul=$lagu_filtered\n" .
+            "waktu=$waktu\n" .
+            "status=pending\n" .
+            "ip=$ip\n" .
+            "---\n";
+    
+    file_put_contents($data_file, $data, FILE_APPEND);
+    return true;
+}
+
+function filterBadwords($text) {
+    global $badwords;
+    $text_lower = strtolower($text);
+    
+    foreach ($badwords as $kata) {
+        if (strpos($text_lower, $kata) !== false) {
+            $length = strlen($kata);
+            $replacement = str_repeat('*', $length);
+            $text = str_ireplace($kata, $replacement, $text);
+        }
+    }
+    return $text;
+}
+
+function bacaLagu() {
+    global $data_file;
+    
+    if (!file_exists($data_file)) return [];
+    
+    $content = file_get_contents($data_file);
+    $entries = explode("---\n", $content);
+    $data = [];
+    
+    foreach ($entries as $entry) {
+        if (trim($entry)) {
+            $lines = explode("\n", $entry);
+            $item = [];
+            foreach ($lines as $line) {
+                if (strpos($line, '=') !== false) {
+                    list($key, $value) = explode('=', $line, 2);
+                    $item[trim($key)] = trim($value);
+                }
+            }
+            if (!empty($item)) {
+                $data[] = $item;
+            }
+        }
+    }
+    
+    return array_reverse($data);
+}
+
+function cekCooldown($ip) {
+    global $cooldown_file;
+    
+    if (!file_exists($cooldown_file)) return false;
+    
+    $lines = file($cooldown_file, FILE_IGNORE_NEW_LINES);
+    foreach ($lines as $line) {
+        list($saved_ip, $time) = explode('|', $line);
+        if ($saved_ip == $ip) {
+            $selisih = time() - $time;
+            if ($selisih < 90) return 90 - $selisih;
+        }
+    }
+    
+    return false;
+}
+
+function setCooldown($ip) {
+    global $cooldown_file;
+    
+    $lines = file_exists($cooldown_file) ? file($cooldown_file, FILE_IGNORE_NEW_LINES) : [];
+    $new_lines = [];
+    
+    foreach ($lines as $line) {
+        list($saved_ip, ) = explode('|', $line);
+        if ($saved_ip != $ip) $new_lines[] = $line;
+    }
+    
+    $new_lines[] = $ip . '|' . time();
+    file_put_contents($cooldown_file, implode("\n", $new_lines));
+}
+
+function getYouTubeFromAPI($query) {
+    // Bersihkan query dari karakter khusus
+    $clean_query = urlencode(trim($query));
+    
+    // API endpoint
+    $api_url = "https://api-lb.ct.ws/?q=" . $clean_query . "&page=0";
+    
+    // Gunakan cURL untuk mengambil data
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    // Debug: Simpan response ke file
+    file_put_contents('api_response.txt', date('Y-m-d H:i:s') . " - Query: $query\n", FILE_APPEND);
+    file_put_contents('api_response.txt', "Response: $response\n\n", FILE_APPEND);
+    
+    if ($response && $http_code == 200) {
+        // Coba decode JSON
+        $data = json_decode($response, true);
+        
+        // Debug: Simpan data parsed
+        file_put_contents('api_parsed.txt', print_r($data, true), FILE_APPEND);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // Coba bersihkan response
+            $response = trim($response);
+            $response = str_replace("\xEF\xBB\xBF", '', $response);
+            
+            // Cari videoId manual dalam response
+            if (preg_match('/"videoId"\s*:\s*"([^"]+)"/', $response, $matches)) {
+                $video_id = $matches[1];
+                $title = $query;
+                
+                // Cari title juga
+                if (preg_match('/"title"\s*:\s*"([^"]+)"/', $response, $title_matches)) {
+                    $title = $title_matches[1];
+                }
+                
+                return [
+                    'video_id' => $video_id,
+                    'title' => $title,
+                    'channel' => '',
+                    'thumbnail' => ''
+                ];
+            }
+        } else {
+            // Data sudah berhasil decode
+            if (is_array($data)) {
+                // Cari video pertama yang valid
+                foreach ($data as $item) {
+                    if (isset($item['videoId']) && !empty($item['videoId'])) {
+                        $video_id = trim($item['videoId']);
+                        
+                        if (preg_match('/^[a-zA-Z0-9_-]{11}$/', $video_id)) {
+                            $title = isset($item['title']) ? $item['title'] : $query;
+                            $title = str_replace('\"}', '', $title);
+                            $title = str_replace('\"', '"', $title);
+                            $title = preg_replace('/\s+/', ' ', $title);
+                            $title = trim($title);
+                            
+                            return [
+                                'video_id' => $video_id,
+                                'title' => $title,
+                                'channel' => isset($item['channel']) ? $item['channel'] : '',
+                                'thumbnail' => isset($item['thumbnail']) ? $item['thumbnail'] : ''
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback: coba pencarian alternatif
+    return getYouTubeFallback($query);
+}
+
+function getYouTubeFallback($query) {
+    // Fallback sederhana
+    $clean_query = urlencode($query . ' audio official');
+    
+    // Buat URL pencarian YouTube
+    $search_url = "https://www.youtube.com/results?search_query=" . $clean_query;
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $search_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    // Cari video ID di halaman
+    if (preg_match('/"videoId":"([^"]{11})"/', $response, $matches)) {
+        $video_id = $matches[1];
+        
+        return [
+            'video_id' => $video_id,
+            'title' => $query,
+            'channel' => '',
+            'thumbnail' => ''
+        ];
+    }
+    
+    return [
+        'video_id' => null,
+        'title' => $query,
+        'channel' => '',
+        'thumbnail' => ''
+    ];
+}
+
+// ===== VERIFIKASI RECAPTCHA =====
+
+function verifyRecaptcha($recaptcha_response) {
+    $recaptcha_secret_key = '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
+    
+    if (empty($recaptcha_response)) {
+        return false;
+    }
+    
+    $url = 'https://www.google.com/recaptcha/api/siteverify';
+    $data = array(
+        'secret' => $recaptcha_secret_key,
+        'response' => $recaptcha_response,
+        'remoteip' => $_SERVER['REMOTE_ADDR']
+    );
+    
+    $options = array(
+        'http' => array(
+            'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
+            'method'  => 'POST',
+            'content' => http_build_query($data)
+        )
+    );
+    
+    $context = stream_context_create($options);
+    $result = file_get_contents($url, false, $context);
+    $response = json_decode($result);
+    
+    return $response->success;
+}
+
+// ===== PROSES =====
+
+$page = 'home';
+$ip = $_SERVER['REMOTE_ADDR'];
+
+// LOGIN
+if (isset($_POST['login'])) {
+    if ($_POST['username'] == $admin_user && $_POST['password'] == $admin_pass) {
+        $_SESSION['admin'] = true;
+        header('Location: ?admin');
+        exit;
+    }
+}
+
+// LOGOUT
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header('Location: ?');
+    exit;
+}
+
+// SUBMIT LAGU
+if (isset($_POST['submit_lagu'])) {
+    $lagu = trim($_POST['lagu'] ?? '');
+    $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
+    
+    if (!empty($lagu)) {
+        // Verifikasi reCAPTCHA
+        if (!verifyRecaptcha($recaptcha_response)) {
+            $_SESSION['error'] = "Harap verifikasi bahwa Anda bukan robot";
+            header('Location: ?');
+            exit;
+        }
+
+        $badword = cekBadwords($lagu);
+        if ($badword !== false) {
+            $_SESSION['error'] = "Terdapat kata tidak pantas";
+            header('Location: ?');
+            exit;
+        }
+        
+        $cooldown = cekCooldown($ip);
+        
+        if ($cooldown === false) {
+            simpanLagu($lagu);
+            setCooldown($ip);
+            $_SESSION['last_lagu'] = $lagu;
+            header('Location: ?thankyou');
+            exit;
+        } else {
+            $_SESSION['error'] = "Tunggu $cooldown detik";
+            header('Location: ?');
+            exit;
+        }
+    }
+}
+
+// ADMIN ACTION
+if (isset($_SESSION['admin']) && isset($_GET['action'])) {
+    $id = $_GET['id'] ?? '';
+    
+    if ($_GET['action'] == 'delete' && $id) {
+        $data = bacaLagu();
+        $new_content = "";
+        
+        foreach ($data as $item) {
+            if ($item['id'] != $id) {
+                $new_content .= "[{$item['id']}]\n" .
+                               "judul={$item['judul']}\n" .
+                               "waktu={$item['waktu']}\n" .
+                               "status={$item['status']}\n" .
+                               "ip={$item['ip']}\n" .
+                               "---\n";
+            }
+        }
+        
+        file_put_contents($data_file, $new_content);
+        header('Location: ?admin');
+        exit;
+    }
+    
+    if ($_GET['action'] == 'update' && $id && isset($_GET['status'])) {
+        $data = bacaLagu();
+        $new_content = "";
+        
+        foreach ($data as $item) {
+            if ($item['id'] == $id) {
+                $item['status'] = $_GET['status'];
+            }
+            
+            $new_content .= "[{$item['id']}]\n" .
+                           "judul={$item['judul']}\n" .
+                           "waktu={$item['waktu']}\n" .
+                           "status={$item['status']}\n" .
+                           "ip={$item['ip']}\n" .
+                           "---\n";
+        }
+        
+        file_put_contents($data_file, $new_content);
+        header('Location: ?admin');
+        exit;
+    }
+}
+
+// TENTUKAN HALAMAN
+if (isset($_GET['admin'])) {
+    $page = isset($_SESSION['admin']) ? 'admin' : 'login';
+} elseif (isset($_GET['thankyou'])) {
+    $page = 'thankyou';
+}
+
+// AMBIL DATA
+$lagu_list = bacaLagu();
+$cooldown_left = cekCooldown($ip);
+
+// ERROR
+$error = $_SESSION['error'] ?? '';
+unset($_SESSION['error']);
+
+?>
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<title>MeTube</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<style>
-*{box-sizing:border-box}
-body{
-  margin:0;
-  font-family:system-ui;
-  background:#0f0f0f;
-  color:#fff;
-}
-header{
-  display:flex;
-  gap:10px;
-  padding:12px 16px;
-  background:#121212;
-  position:sticky;
-  top:0;
-}
-.logo{
-  font-weight:900;
-  font-size:22px;
-}
-.logo span{color:#ff0000}
-input{
-  flex:1;
-  padding:10px;
-  border:none;
-  border-radius:6px;
-}
-button{
-  background:#ff0000;
-  color:#fff;
-  border:none;
-  padding:10px 16px;
-  border-radius:6px;
-  cursor:pointer;
-}
-main{
-  display:grid;
-  grid-template-columns:1fr 380px;
-}
-.player{
-  padding:16px;
-}
-iframe{
-  width:100%;
-  aspect-ratio:16/9;
-  border:none;
-  border-radius:12px;
-  background:#000;
-}
-.list{
-  padding:16px;
-  overflow:auto;
-  border-left:1px solid #222;
-  height:calc(100vh - 64px);
-}
-.item{
-  display:flex;
-  gap:10px;
-  margin-bottom:14px;
-  cursor:pointer;
-}
-.item img{
-  width:160px;
-  border-radius:8px;
-}
-.item b{font-size:14px}
-.item span{font-size:13px;color:#aaa}
-
-@media(max-width:900px){
-  main{grid-template-columns:1fr}
-  .list{height:auto;border:none}
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Lagu</title>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #fafafa;
+            --bg-tertiary: #f5f5f5;
+            --border: #eaeaea;
+            --text-primary: #000000;
+            --text-secondary: #666666;
+            --text-tertiary: #888888;
+            --accent: #0070f3;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #000000;
+                --bg-secondary: #111111;
+                --bg-tertiary: #222222;
+                --border: #333333;
+                --text-primary: #ffffff;
+                --text-secondary: #888888;
+                --text-tertiary: #666666;
+                --accent: #0070f3;
+            }
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        }
+        
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            transition: all 0.2s;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 60px 0 40px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 40px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        
+        .card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 15px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        button, .btn {
+            padding: 12px 24px;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: opacity 0.2s;
+        }
+        
+        button:hover, .btn:hover {
+            opacity: 0.8;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+        
+        .btn-outline:hover {
+            background: var(--bg-secondary);
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+        
+        .alert {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid;
+        }
+        
+        .alert-error {
+            border-left-color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+        
+        .alert-success {
+            border-left-color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+        
+        .lagu-item {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .lagu-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
+        .lagu-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        
+        .lagu-meta {
+            color: var(--text-tertiary);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        
+        .youtube-player {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 20px 0;
+            position: relative;
+        }
+        
+        .youtube-player iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+        
+        .video-title {
+            margin-top: 10px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            padding: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .video-channel {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 5px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .status.pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+        
+        .status.playing {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+        
+        .status.done {
+            background: rgba(107, 114, 128, 0.1);
+            color: #6b7280;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        
+        .login-form {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        
+        .thankyou {
+            text-align: center;
+            padding: 80px 20px;
+        }
+        
+        .thankyou-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .thankyou-song {
+            font-size: 1.25rem;
+            color: var(--accent);
+            margin: 20px 0;
+            padding: 15px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+        }
+        
+        .timer {
+            font-family: 'Courier New', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            margin: 20px 0;
+            color: var(--text-primary);
+        }
+        
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            margin-top: 60px;
+            color: var(--text-tertiary);
+            border-top: 1px solid var(--border);
+            font-size: 14px;
+        }
+        
+        .g-recaptcha {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .video-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            padding: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 15px;
+            }
+            
+            header {
+                padding: 40px 0 30px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .lagu-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .nav {
+                flex-direction: column;
+            }
+            
+            .btn, button {
+                width: 100%;
+                text-align: center;
+            }
+            
+            .g-recaptcha {
+                transform: scale(0.9);
+                transform-origin: center;
+            }
+        }
+    </style>
+    <!-- Google reCAPTCHA v2 Script -->
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
-
 <body>
-
-<header>
-  <div class="logo">Me<span>Tube</span></div>
-  <input id="q" placeholder="Cari lagu / video...">
-  <button onclick="search()">Search</button>
-</header>
-
-<main>
-  <div class="player">
-    <iframe id="player" allow="autoplay; encrypted-media"></iframe>
-  </div>
-  <div class="list" id="list">Ketik sesuatu 🗿</div>
-</main>
-
-<script>
-// ================= API CONFIG =================
-const API_URL = 'https://api-lb.ct.ws/?api=1&q=';
-
-// ================ SEARCH =====================
-async function search(){
-  const q = document.getElementById('q').value.trim();
-  if(!q) return;
-
-  const list = document.getElementById('list');
-  list.innerHTML = 'Loading...';
-
-  try{
-    const res = await fetch(API_URL + encodeURIComponent(q));
-    const data = await res.json();
-    render(data);
-  }catch(e){
-    list.innerHTML = 'Error jir 💀';
-  }
-}
-
-// ================ RENDER =====================
-function render(data){
-  const list = document.getElementById('list');
-  list.innerHTML = '';
-
-  if(!data || !data.length){
-    list.innerHTML = 'Ga ketemu 😭';
-    return;
-  }
-
-  data.forEach((v,i)=>{
-    const div = document.createElement('div');
-    div.className = 'item';
-    div.innerHTML = `
-      <img src="${v.thumbnail}">
-      <div>
-        <b>${v.title}</b><br>
-        <span>${v.channel}</span>
-      </div>
-    `;
-    div.onclick = ()=>{
-      document.getElementById('player').src =
-        'https://www.youtube.com/embed/' + v.videoId + '?autoplay=1';
-    };
-    list.appendChild(div);
-
-    // autoplay first
-    if(i===0){
-      document.getElementById('player').src =
-        'https://www.youtube.com/embed/' + v.videoId + '?autoplay=1';
-    }
-  });
-}
-
-// enter = search
-document.getElementById('q').addEventListener('keydown', e=>{
-  if(e.key === 'Enter') search();
-});
-</script>
-
+    <div class="container">
+        <?php if ($page == 'home'): ?>
+            <header>
+                <h1>Request Lagu</h1>
+                <p class="subtitle">Kirim request lagu untuk diputar</p>
+            </header>
+            
+            <?php if ($error): ?>
+                <div class="alert alert-error">
+                    <?= htmlspecialchars($error) ?>
+                </div>
+            <?php endif; ?>
+            
+            <div class="card">
+                <form method="POST" id="laguForm">
+                    <input type="text" 
+                           name="lagu" 
+                           placeholder="Judul lagu dan artis"
+                           required
+                           autocomplete="off"
+                           maxlength="100"
+                           id="laguInput">
+                    
+                    <!-- Google reCAPTCHA v2 -->
+                    <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
+                    
+                    <button type="submit" 
+                            name="submit_lagu"
+                            id="submitBtn"
+                            <?= $cooldown_left ? 'disabled' : '' ?>>
+                        <?php if ($cooldown_left): ?>
+                            Tunggu <?= $cooldown_left ?> detik
+                        <?php else: ?>
+                            Kirim Request
+                        <?php endif; ?>
+                    </button>
+                </form>
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="?admin" class="btn btn-outline">Login Admin</a>
+            </div>
+            
+            <footer>
+                <p>© <?= date('Y') ?> • Sistem Request Lagu</p>
+            </footer>
+            
+        <?php elseif ($page == 'thankyou'): ?>
+            <div class="thankyou">
+                <h1 class="thankyou-title">Request Berhasil</h1>
+                
+                <div class="thankyou-song">
+                    "<?= htmlspecialchars($_SESSION['last_lagu'] ?? '') ?>"
+                </div>
+                
+                <div class="card" style="max-width: 300px; margin: 0 auto;">
+                    <div class="timer" id="countdown">90</div>
+                    <p style="color: var(--text-tertiary);">detik cooldown</p>
+                </div>
+                
+                <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
+                    <a href="?" class="btn">Request Lain</a>
+                    <a href="?admin" class="btn btn-outline">Lihat Inbox</a>
+                </div>
+            </div>
+            
+        <?php elseif ($page == 'admin' && isset($_SESSION['admin'])): ?>
+            <header>
+                <h1>Admin Inbox</h1>
+                <p class="subtitle">Kelola request lagu</p>
+            </header>
+            
+            <div class="nav">
+                <a href="?admin" class="btn">
+                    Inbox (<?= count($lagu_list) ?>)
+                </a>
+                <a href="?" class="btn btn-outline">Home</a>
+                <a href="?logout" class="btn btn-outline">Logout</a>
+            </div>
+            
+            <?php if (empty($lagu_list)): ?>
+                <div class="card" style="text-align: center; padding: 60px 20px;">
+                    <p style="color: var(--text-tertiary);">Belum ada request</p>
+                </div>
+            <?php else: ?>
+                <?php 
+                $first_playing_index = null;
+                $video_data = [];
+                
+                foreach ($lagu_list as $index => $lagu) {
+                    if ($lagu['status'] == 'playing' && $first_playing_index === null) {
+                        $first_playing_index = $index;
+                    }
+                    $video_data[$index] = getYouTubeFromAPI($lagu['judul']);
+                }
+                ?>
+                
+                <?php foreach ($lagu_list as $index => $lagu): ?>
+                    <?php $video_info = $video_data[$index]; ?>
+                    <div class="lagu-item" data-index="<?= $index ?>" data-status="<?= $lagu['status'] ?>">
+                        <div class="lagu-header">
+                            <div>
+                                <div class="lagu-title">
+                                    <?= htmlspecialchars($lagu['judul']) ?>
+                                    <span class="status <?= $lagu['status'] ?>">
+                                        <?= strtoupper($lagu['status']) ?>
+                                    </span>
+                                </div>
+                                <div class="lagu-meta">
+                                    <?= $lagu['waktu'] ?> • 
+                                    <?= $lagu['ip'] ?>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="youtube-player">
+                            <?php if (!empty($video_info['video_id'])): ?>
+                                <iframe 
+                                    src="https://www.youtube.com/embed/<?= $video_info['video_id'] ?>?rel=0&controls=1&modestbranding=1"
+                                    frameborder="0"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowfullscreen>
+                                </iframe>
+                            <?php else: ?>
+                                <div style="height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; color: white;">
+                                    <div style="text-align: center; padding: 20px;">
+                                        <div style="font-size: 48px; margin-bottom: 10px;">🎵</div>
+                                        <p>Video tidak ditemukan</p>
+                                        <p style="font-size: 12px; opacity: 0.7; margin-top: 10px;">
+                                            <?= htmlspecialchars($lagu['judul']) ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <?php if (!empty($video_info['title'])): ?>
+                            <div class="video-info">
+                                <div class="video-title" title="<?= htmlspecialchars($video_info['title']) ?>">
+                                    <strong>🎵</strong> <?= htmlspecialchars($video_info['title']) ?>
+                                </div>
+                                <?php if (!empty($video_info['channel'])): ?>
+                                    <div class="video-channel">
+                                        <strong>👤</strong> <?= htmlspecialchars($video_info['channel']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="actions">
+                            <?php if ($lagu['status'] == 'pending'): ?>
+                                <a href="?admin&action=update&id=<?= $lagu['id'] ?>&status=playing" 
+                                   class="btn btn-small">
+                                    ▶ Playing
+                                </a>
+                            <?php endif; ?>
+                            
+                            <?php if ($lagu['status'] == 'playing'): ?>
+                                <a href="?admin&action=update&id=<?= $lagu['id'] ?>&status=done" 
+                                   class="btn btn-small">
+                                    ✅ Selesai
+                                </a>
+                            <?php endif; ?>
+                            
+                            <a href="?admin&action=delete&id=<?= $lagu['id'] ?>" 
+                               class="btn btn-small btn-outline"
+                               onclick="return confirm('Hapus request ini?')">
+                                🗑️ Hapus
+                            </a>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+            
+            <footer>
+                <p>Total request: <?= count($lagu_list) ?></p>
+            </footer>
+            
+        <?php else: ?>
+            <div class="login-form">
+                <div class="card">
+                    <h2 style="text-align: center; margin-bottom: 30px;">Login Admin</h2>
+                    <form method="POST">
+                        <input type="text" name="username" placeholder="Username" required>
+                        <input type="password" name="password" placeholder="Password" required>
+                        <button type="submit" name="login" style="width: 100%;">Login</button>
+                    </form>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <a href="?" class="btn btn-outline">← Kembali</a>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
+    </div>
+    
+    <script>
+        // ===== COOLDOWN TIMER =====
+        <?php if ($page == 'home' && $cooldown_left): ?>
+        let timeLeft = <?= $cooldown_left ?>;
+        const submitBtn = document.getElementById('submitBtn');
+        
+        const timer = setInterval(() => {
+            timeLeft--;
+            submitBtn.innerHTML = 'Tunggu ' + timeLeft + ' detik';
+            
+            if (timeLeft <= 0) {
+                clearInterval(timer);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Kirim Request';
+            }
+        }, 1000);
+        <?php endif; ?>
+        
+        // ===== THANK YOU TIMER =====
+        <?php if ($page == 'thankyou'): ?>
+        let countdown = 90;
+        const countdownEl = document.getElementById('countdown');
+        
+        const thankyouTimer = setInterval(() => {
+            countdown--;
+            if (countdownEl) countdownEl.textContent = countdown;
+            
+            if (countdown <= 0) {
+                clearInterval(thankyouTimer);
+                window.location.href = '?';
+            }
+        }, 1000);
+        
+        setTimeout(() => {
+            window.location.href = '?';
+        }, 90000);
+        <?php endif; ?>
+    </script>
 </body>
 </html>
