@@ -342,7 +342,7 @@
             font-size: 13px;
         }
 
-        /* ===== VIDEO PLAYER MODAL ===== */
+        /* ===== VIDEO INFO MODAL ===== */
         .player-modal {
             display: none;
             position: fixed;
@@ -350,7 +350,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.9);
+            background-color: rgba(0, 0, 0, 0.95);
             z-index: 2000;
             justify-content: center;
             align-items: center;
@@ -359,12 +359,12 @@
 
         .player-content {
             width: 100%;
-            max-width: 1100px;
+            max-width: 800px;
             background-color: #111;
             border-radius: 12px;
             overflow: hidden;
             position: relative;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
         }
 
         .close-player {
@@ -384,38 +384,84 @@
         }
 
         .close-player:hover {
-            background-color: rgba(255, 255, 255, 0.2);
+            background-color: rgba(255, 255, 255, 0.3);
         }
 
-        .player-frame {
+        .video-preview {
             width: 100%;
             aspect-ratio: 16/9;
             background-color: #000;
+            position: relative;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            position: relative;
-        }
-
-        .player-placeholder {
-            color: #aaa;
-            font-size: 18px;
+            padding: 30px;
             text-align: center;
         }
 
+        .video-preview img {
+            max-width: 100%;
+            max-height: 70%;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .watch-youtube-btn {
+            padding: 15px 30px;
+            background-color: #ff0000;
+            color: white;
+            border: none;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s;
+            text-decoration: none;
+            margin-top: 20px;
+        }
+
+        .watch-youtube-btn:hover {
+            background-color: #cc0000;
+            transform: scale(1.05);
+        }
+
         .player-info {
-            padding: 20px;
+            padding: 25px;
+            background-color: #151515;
         }
 
         .player-title {
             font-size: 24px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+
+        .player-details {
+            display: flex;
+            justify-content: space-between;
+            color: #aaa;
+            margin-bottom: 25px;
+            font-size: 14px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .player-description {
+            color: #888;
+            line-height: 1.6;
+            margin-bottom: 25px;
+            font-size: 15px;
         }
 
         .reaction-buttons {
             display: flex;
             gap: 15px;
             margin-top: 20px;
+            flex-wrap: wrap;
         }
 
         .reaction {
@@ -429,11 +475,17 @@
             align-items: center;
             gap: 8px;
             transition: all 0.2s;
+            font-size: 14px;
         }
 
         .reaction:hover {
             background-color: #333;
             transform: scale(1.05);
+        }
+
+        .reaction.active {
+            background-color: #444;
+            border-color: #fff;
         }
 
         /* ===== LOADING INDICATOR ===== */
@@ -457,6 +509,32 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+
+        /* ===== API STATUS ===== */
+        .api-status {
+            background-color: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 30px;
+            border-left: 4px solid #555;
+            font-size: 14px;
+        }
+
+        .api-status h4 {
+            color: #aaa;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .api-status.online {
+            border-left-color: #4CAF50;
+        }
+
+        .api-status.offline {
+            border-left-color: #f44336;
         }
 
         /* ===== RESPONSIVE DESIGN ===== */
@@ -497,6 +575,15 @@
             .navbar {
                 padding: 10px 15px;
             }
+            
+            .player-modal {
+                padding: 10px;
+            }
+            
+            .reaction-buttons {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
         }
 
         @media (max-width: 480px) {
@@ -515,6 +602,14 @@
             
             .logo {
                 font-size: 22px;
+            }
+            
+            .player-info {
+                padding: 15px;
+            }
+            
+            .player-title {
+                font-size: 18px;
             }
         }
 
@@ -540,6 +635,31 @@
             0% { transform: scale(1); }
             50% { transform: scale(1.05); }
             100% { transform: scale(1); }
+        }
+
+        /* ===== BADGES ===== */
+        .video-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            background-color: #333;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+
+        .badge-4k {
+            background-color: #4CAF50;
+        }
+
+        .badge-hd {
+            background-color: #2196F3;
+        }
+
+        .badge-new {
+            background-color: #ff9800;
         }
     </style>
 </head>
@@ -591,6 +711,7 @@
             <div class="welcome-section">
                 <h2>Selamat Datang di MeTube</h2>
                 <p>YouTube tanpa iklan yang mempelajari preferensi Anda. Sistem "My Self" akan merekam interaksi Anda untuk menampilkan konten yang lebih relevan.</p>
+                <p><strong>Note:</strong> Video akan dibuka di YouTube asli. Fokus utama adalah sistem rekomendasi My Self yang belajar dari interaksi Anda.</p>
             </div>
             
             <h3 class="section-title">Video Untuk Anda</h3>
@@ -603,22 +724,35 @@
             <!-- LOADING INDICATOR -->
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <p>Memuat video...</p>
+                <p>Memuat video dari API...</p>
+            </div>
+            
+            <!-- API STATUS -->
+            <div class="api-status offline" id="apiStatus">
+                <h4>⚙️ API Status</h4>
+                <p id="apiStatusText">Menghubungi API video...</p>
             </div>
         </main>
     </div>
 
-    <!-- VIDEO PLAYER MODAL -->
+    <!-- VIDEO INFO MODAL -->
     <div class="player-modal" id="playerModal">
         <div class="player-content">
             <button class="close-player" id="closePlayer">&times;</button>
-            <div class="player-frame">
-                <div class="player-placeholder" id="playerPlaceholder">
-                    Video akan diputar di sini
-                </div>
+            <div class="video-preview" id="videoPreview">
+                <!-- Preview akan dimuat di sini -->
             </div>
             <div class="player-info">
                 <h2 class="player-title" id="playerTitle">Judul Video</h2>
+                <div class="player-details">
+                    <span id="playerChannel">Channel</span>
+                    <span id="playerViews">Views</span>
+                    <span id="playerPublished">Published</span>
+                    <span id="playerDuration">Duration</span>
+                </div>
+                <div class="player-description" id="playerDescription">
+                    Deskripsi video akan muncul di sini...
+                </div>
                 <div class="reaction-buttons">
                     <button class="reaction" data-action="like">👍 Like</button>
                     <button class="reaction" data-action="skip">⏭️ Skip</button>
@@ -639,6 +773,8 @@
         let myselfActive = false;
         let myselfProfile = null;
         let currentVideos = [];
+        let currentPlayingVideo = null;
+        let isAPIWorking = false;
 
         // ===== MY SELF SYSTEM =====
         class MyselfSystem {
@@ -690,12 +826,10 @@
                     
                     mousePositions.push({ x: e.clientX, y: e.clientY, time: Date.now() });
                     
-                    // Keep only last 50 positions
                     if (mousePositions.length > 50) {
                         mousePositions.shift();
                     }
                     
-                    // Detect rapid movements (excitement)
                     if (mousePositions.length >= 10) {
                         const recent = mousePositions.slice(-10);
                         const totalDistance = recent.reduce((sum, pos, i) => {
@@ -707,7 +841,7 @@
                             return sum + distance;
                         }, 0);
                         
-                        if (totalDistance > 5000) { // Threshold for excitement
+                        if (totalDistance > 5000) {
                             myselfProfile.mood = 'excited';
                         } else if (totalDistance < 1000) {
                             myselfProfile.mood = 'focused';
@@ -723,7 +857,6 @@
                     const now = Date.now();
                     const timeSinceLastScroll = now - lastScrollTime;
                     
-                    // Fast scrolling indicates impatience
                     if (timeSinceLastScroll < 200) {
                         myselfProfile.mood = 'impatient';
                     }
@@ -750,12 +883,10 @@
                     timestamp: new Date().toISOString()
                 });
                 
-                // Keep only last 20 searches
                 if (myselfProfile.preferences.searchHistory.length > 20) {
                     myselfProfile.preferences.searchHistory.shift();
                 }
                 
-                // Analyze search patterns
                 this.analyzeSearchPatterns();
                 this.saveProfile();
                 this.updateProfileDisplay();
@@ -776,9 +907,23 @@
                 const skips = myselfProfile.preferences.reactionHistory.filter(r => r.action === 'skip').length;
                 myselfProfile.preferences.watchPatterns.skipRate = totalReactions > 0 ? (skips / totalReactions) * 100 : 0;
                 
-                // Update watch time if action is 'finish'
+                // Update watch time
                 if (action === 'finish' && metadata.duration) {
                     myselfProfile.totalWatchSeconds += metadata.duration;
+                }
+                
+                // Add to watch history
+                if (action === 'view') {
+                    myselfProfile.preferences.watchHistory.push({
+                        videoId,
+                        title: metadata.title,
+                        timestamp: new Date().toISOString(),
+                        duration: metadata.duration
+                    });
+                    
+                    if (myselfProfile.preferences.watchHistory.length > 50) {
+                        myselfProfile.preferences.watchHistory.shift();
+                    }
                 }
                 
                 this.saveProfile();
@@ -786,7 +931,6 @@
             }
 
             analyzeSearchPatterns() {
-                // Simple genre detection based on search keywords
                 const searches = myselfProfile.preferences.searchHistory.map(s => s.query.toLowerCase());
                 
                 const genreKeywords = {
@@ -794,7 +938,9 @@
                     'music': ['music', 'song', 'mv', 'audio', 'lyrics'],
                     'education': ['tutorial', 'how to', 'learn', 'course', 'education'],
                     'sports': ['sport', 'football', 'basketball', 'match', 'highlights'],
-                    'entertainment': ['funny', 'comedy', 'entertainment', 'vlog', 'prank']
+                    'entertainment': ['funny', 'comedy', 'entertainment', 'vlog', 'prank'],
+                    'technology': ['tech', 'programming', 'coding', 'computer', 'ai'],
+                    'cooking': ['cook', 'recipe', 'food', 'culinary', 'baking']
                 };
                 
                 const genreCounts = {};
@@ -807,20 +953,16 @@
                     }
                 });
                 
-                // Update genre preferences
                 myselfProfile.preferences.genres = genreCounts;
             }
 
             updateProfileDisplay() {
-                // Update UI elements with profile data
                 document.getElementById('userMood').textContent = myselfProfile.mood;
                 
-                // Format watch time
                 const hours = Math.floor(myselfProfile.totalWatchSeconds / 3600);
                 const minutes = Math.floor((myselfProfile.totalWatchSeconds % 3600) / 60);
                 document.getElementById('watchTime').textContent = `${hours}h ${minutes}m`;
                 
-                // Get top genre
                 const genres = myselfProfile.preferences.genres;
                 let topGenre = 'Belum ada data';
                 let maxCount = 0;
@@ -851,77 +993,205 @@
         class VideoAPI {
             constructor() {
                 this.baseURL = 'https://api-lb.ct.ws/?api=1&q=';
+                this.testAPI();
+            }
+
+            async testAPI() {
+                try {
+                    const response = await fetch(`${this.baseURL}test`);
+                    isAPIWorking = response.ok;
+                    
+                    const statusElement = document.getElementById('apiStatus');
+                    const statusText = document.getElementById('apiStatusText');
+                    
+                    if (isAPIWorking) {
+                        statusElement.className = 'api-status online';
+                        statusText.textContent = 'API online - Mencari video dari sumber eksternal';
+                    } else {
+                        statusElement.className = 'api-status offline';
+                        statusText.textContent = 'API offline - Menggunakan data demo';
+                    }
+                } catch (error) {
+                    isAPIWorking = false;
+                    document.getElementById('apiStatus').className = 'api-status offline';
+                    document.getElementById('apiStatusText').textContent = 'API offline - Menggunakan data demo';
+                }
             }
 
             async searchVideos(query) {
+                document.getElementById('loading').style.display = 'block';
+                
+                // Try real API first
+                if (isAPIWorking && query && query.length > 2) {
+                    try {
+                        const apiUrl = `${this.baseURL}${encodeURIComponent(query)}`;
+                        const response = await fetch(apiUrl);
+                        
+                        if (response.ok) {
+                            const data = await response.text();
+                            document.getElementById('loading').style.display = 'none';
+                            return this.parseAPIResponse(data, query);
+                        }
+                    } catch (error) {
+                        console.log('API request failed, using fallback');
+                    }
+                }
+                
+                // Fallback to mock data
+                await new Promise(resolve => setTimeout(resolve, 800));
+                document.getElementById('loading').style.display = 'none';
+                return this.getMockVideos(query);
+            }
+
+            parseAPIResponse(apiData, query) {
                 try {
-                    document.getElementById('loading').style.display = 'block';
+                    // Parse the JSON response
+                    const parsed = JSON.parse(apiData);
+                    const videos = [];
                     
-                    // Simulate API call (in reality, you'd use the actual API)
-                    // For demo purposes, we'll use mock data
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    // Process each video item
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(item => {
+                            if (item.videoId && item.title) {
+                                videos.push({
+                                    videoId: item.videoId,
+                                    title: this.cleanTitle(item.title),
+                                    channel: item.channel || 'Unknown Channel',
+                                    thumbnail: `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+                                    duration: this.extractDuration(item),
+                                    views: this.extractViews(item),
+                                    publishedTime: this.extractPublishedTime(item),
+                                    badges: this.extractBadges(item),
+                                    description: `Video tentang ${query}. Ditemukan melalui API MeTube.`
+                                });
+                            }
+                        });
+                    }
                     
-                    const mockVideos = this.generateMockVideos(query);
-                    
-                    document.getElementById('loading').style.display = 'none';
-                    return mockVideos;
+                    return videos.length > 0 ? videos.slice(0, 12) : this.getMockVideos(query);
                     
                 } catch (error) {
-                    console.error('Error fetching videos:', error);
-                    document.getElementById('loading').style.display = 'none';
-                    return this.generateMockVideos('error');
+                    console.error('Error parsing API response:', error);
+                    return this.getMockVideos(query);
                 }
             }
 
-            generateMockVideos(query) {
-                const mockTitles = [
-                    "Beginner's Guide to Web Development",
-                    "The Science of Black Holes Explained",
-                    "10 Cooking Hacks That Will Change Your Life",
-                    "History of Ancient Civilizations",
-                    "Learn JavaScript in 60 Minutes",
-                    "The Future of Artificial Intelligence",
-                    "Music for Focus and Concentration",
-                    "Top 10 Movies of All Time",
-                    "How to Build Your First Mobile App",
-                    "Understanding Quantum Physics",
-                    "The Art of Photography",
-                    "Yoga for Beginners: Complete Guide",
-                    "Exploring the Deep Ocean",
-                    "Financial Freedom in Your 20s",
-                    "The Secrets of Memory Palace"
-                ];
+            cleanTitle(title) {
+                // Remove HTML entities and clean up title
+                return title
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .replace(/&amp;/g, '&')
+                    .replace(/\[\s*Music\s*\]/gi, '')
+                    .replace(/\[\s*Official Video\s*\]/gi, '')
+                    .trim();
+            }
 
-                const mockChannels = [
-                    "Tech Explorers", "Science Simplified", "Cooking Masters", 
-                    "History Channel", "Code Academy", "Future Tech", 
-                    "Music Studio", "Film Buffs", "App Developers",
-                    "Physics Lab", "Creative Arts", "Wellness Journey",
-                    "Ocean Discovery", "Finance Gurus", "Mind Techniques"
-                ];
+            extractDuration(item) {
+                // Extract duration from API response
+                if (item.lengthText && item.lengthText.simpleText) {
+                    return item.lengthText.simpleText;
+                }
+                return this.randomDuration();
+            }
 
-                const videos = [];
-                
-                for (let i = 0; i < 12; i++) {
-                    const titleIndex = (query.length + i) % mockTitles.length;
-                    const channelIndex = (query.length + i * 2) % mockChannels.length;
-                    
-                    const duration = `${Math.floor(Math.random() * 10) + 5}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}`;
-                    const views = `${(Math.random() * 10 + 1).toFixed(1)}M views`;
-                    const timeAgo = `${Math.floor(Math.random() * 12) + 1} months ago`;
-                    
-                    videos.push({
-                        videoId: `mock_${Date.now()}_${i}`,
-                        title: `${mockTitles[titleIndex]} ${query ? `| ${query}` : ''}`,
-                        channel: mockChannels[channelIndex],
-                        thumbnail: `https://picsum.photos/seed/${query + i}/320/180?grayscale`,
-                        duration: duration,
-                        views: views,
-                        publishedTime: timeAgo
+            extractViews(item) {
+                if (item.viewCountText && item.viewCountText.simpleText) {
+                    return item.viewCountText.simpleText;
+                } else if (item.shortViewCountText && item.shortViewCountText.simpleText) {
+                    return item.shortViewCountText.simpleText + ' views';
+                }
+                return this.formatViews(Math.floor(Math.random() * 10000000));
+            }
+
+            extractPublishedTime(item) {
+                if (item.publishedTimeText && item.publishedTimeText.simpleText) {
+                    return item.publishedTimeText.simpleText;
+                }
+                return this.randomTimeAgo();
+            }
+
+            extractBadges(item) {
+                const badges = [];
+                if (item.badges) {
+                    item.badges.forEach(badge => {
+                        if (badge.metadataBadgeRenderer && badge.metadataBadgeRenderer.label) {
+                            badges.push({
+                                text: badge.metadataBadgeRenderer.label,
+                                type: badge.metadataBadgeRenderer.style.includes('4K') ? '4k' : 'hd'
+                            });
+                        }
                     });
                 }
+                return badges;
+            }
+
+            getMockVideos(query) {
+                const mockVideos = [
+                    {
+                        videoId: 'dQw4w9WgXcQ',
+                        title: 'Never Gonna Give You Up',
+                        channel: 'Rick Astley',
+                        thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+                        duration: '3:32',
+                        views: '1.4B views',
+                        publishedTime: '13 years ago',
+                        badges: [{ text: '4K', type: '4k' }],
+                        description: 'Official music video for Rick Astley - Never Gonna Give You Up'
+                    },
+                    {
+                        videoId: '9bZkp7q19f0',
+                        title: 'GANGNAM STYLE',
+                        channel: 'officialpsy',
+                        thumbnail: 'https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg',
+                        duration: '4:13',
+                        views: '4.7B views',
+                        publishedTime: '11 years ago',
+                        badges: [{ text: 'HD', type: 'hd' }],
+                        description: 'PSY - GANGNAM STYLE (강남스타일) M/V'
+                    },
+                    {
+                        videoId: 'kJQP7kiw5Fk',
+                        title: 'Despacito',
+                        channel: 'Luis Fonsi',
+                        thumbnail: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg',
+                        duration: '4:41',
+                        views: '8.1B views',
+                        publishedTime: '7 years ago',
+                        badges: [{ text: '4K', type: '4k' }],
+                        description: 'Luis Fonsi - Despacito ft. Daddy Yankee'
+                    }
+                ];
+
+                if (query) {
+                    return mockVideos.filter(video => 
+                        video.title.toLowerCase().includes(query.toLowerCase()) ||
+                        video.channel.toLowerCase().includes(query.toLowerCase())
+                    );
+                }
                 
-                return videos;
+                return mockVideos;
+            }
+
+            randomDuration() {
+                const minutes = Math.floor(Math.random() * 45) + 1;
+                const seconds = Math.floor(Math.random() * 60);
+                return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            formatViews(count) {
+                if (count >= 1000000) {
+                    return `${(count / 1000000).toFixed(1)}M views`;
+                } else if (count >= 1000) {
+                    return `${(count / 1000).toFixed(1)}K views`;
+                }
+                return `${count} views`;
+            }
+
+            randomTimeAgo() {
+                const times = ['1 day ago', '1 week ago', '2 weeks ago', '1 month ago', 
+                              '3 months ago', '6 months ago', '1 year ago', '2 years ago'];
+                return times[Math.floor(Math.random() * times.length)];
             }
         }
 
@@ -935,18 +1205,15 @@
             }
 
             initEventListeners() {
-                // Search functionality
                 document.getElementById('searchBtn').addEventListener('click', () => this.handleSearch());
                 document.getElementById('searchInput').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') this.handleSearch();
                 });
 
-                // Theme toggle
                 document.getElementById('themeToggle').addEventListener('click', () => {
                     document.body.classList.toggle('black-white-mode');
                 });
 
-                // My Self toggle
                 document.getElementById('myselfToggle').addEventListener('click', () => {
                     myselfActive = !myselfActive;
                     document.getElementById('myselfToggle').textContent = 
@@ -959,24 +1226,20 @@
                     }
                 });
 
-                // Reset profile
                 document.getElementById('resetProfile').addEventListener('click', () => {
                     this.myselfSystem.resetProfile();
                 });
 
-                // Close player modal
                 document.getElementById('closePlayer').addEventListener('click', () => {
                     document.getElementById('playerModal').style.display = 'none';
                 });
 
-                // Close modal when clicking outside
                 document.getElementById('playerModal').addEventListener('click', (e) => {
                     if (e.target.id === 'playerModal') {
                         document.getElementById('playerModal').style.display = 'none';
                     }
                 });
 
-                // Reaction buttons
                 document.querySelectorAll('.reaction').forEach(button => {
                     button.addEventListener('click', (e) => {
                         const action = e.target.dataset.action;
@@ -984,7 +1247,6 @@
                     });
                 });
 
-                // Sidebar items
                 document.querySelectorAll('.sidebar-item').forEach((item, index) => {
                     item.addEventListener('click', () => {
                         document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
@@ -996,7 +1258,6 @@
                     });
                 });
 
-                // Menu button
                 document.getElementById('menuBtn').addEventListener('click', () => {
                     const sidebar = document.getElementById('sidebar');
                     sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
@@ -1005,20 +1266,21 @@
 
             async handleSearch() {
                 const query = document.getElementById('searchInput').value.trim();
-                if (!query) return;
+                if (!query) {
+                    this.loadHomeVideos();
+                    return;
+                }
                 
-                // Record search in My Self system
                 if (myselfActive) {
                     this.myselfSystem.recordSearch(query);
                 }
                 
-                // Search for videos
                 const videos = await this.videoAPI.searchVideos(query);
                 this.displayVideos(videos);
             }
 
             async loadHomeVideos() {
-                const videos = await this.videoAPI.searchVideos('trending');
+                const videos = await this.videoAPI.searchVideos('music');
                 this.displayVideos(videos);
             }
 
@@ -1026,6 +1288,16 @@
                 currentVideos = videos;
                 const videoGrid = document.getElementById('videoGrid');
                 videoGrid.innerHTML = '';
+                
+                if (videos.length === 0) {
+                    videoGrid.innerHTML = `
+                        <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #aaa;">
+                            <h3>😔 Tidak ada video ditemukan</h3>
+                            <p>Coba kata kunci pencarian yang berbeda</p>
+                        </div>
+                    `;
+                    return;
+                }
                 
                 videos.forEach(video => {
                     const videoCard = this.createVideoCard(video);
@@ -1038,9 +1310,13 @@
                 card.className = 'video-card';
                 card.dataset.videoId = video.videoId;
                 
+                const badgesHTML = video.badges ? video.badges.map(badge => 
+                    `<span class="video-badge badge-${badge.type}">${badge.text}</span>`
+                ).join('') : '';
+                
                 card.innerHTML = `
                     <div class="thumbnail-container">
-                        <img src="${video.thumbnail}" alt="${video.title}" class="thumbnail">
+                        <img src="${video.thumbnail}" alt="${video.title}" class="thumbnail" onerror="this.src='https://picsum.photos/seed/${video.videoId}/320/180?grayscale'">
                         <div class="video-duration">${video.duration}</div>
                     </div>
                     <div class="video-info">
@@ -1050,22 +1326,32 @@
                             <span>${video.views}</span>
                             <span>${video.publishedTime}</span>
                         </div>
+                        ${badgesHTML ? `<div style="margin-top: 8px;">${badgesHTML}</div>` : ''}
                     </div>
                 `;
                 
-                card.addEventListener('click', () => this.openVideoPlayer(video));
+                card.addEventListener('click', () => this.showVideoInfo(video));
                 return card;
             }
 
-            openVideoPlayer(video) {
+            showVideoInfo(video) {
+                currentPlayingVideo = video;
+                
                 document.getElementById('playerTitle').textContent = video.title;
-                document.getElementById('playerPlaceholder').innerHTML = `
-                    <div style="padding: 20px;">
-                        <h3>${video.title}</h3>
-                        <p>Channel: ${video.channel}</p>
-                        <p>Durasi: ${video.duration} • Ditonton: ${video.views}</p>
-                        <p><em>Mode demo: Player sebenarnya akan menggunakan videoId: ${video.videoId}</em></p>
-                    </div>
+                document.getElementById('playerChannel').textContent = video.channel;
+                document.getElementById('playerViews').textContent = video.views;
+                document.getElementById('playerPublished').textContent = video.publishedTime;
+                document.getElementById('playerDuration').textContent = video.duration;
+                document.getElementById('playerDescription').textContent = video.description || `Video "${video.title}" oleh ${video.channel}.`;
+                
+                // Create preview with YouTube link
+                const preview = document.getElementById('videoPreview');
+                preview.innerHTML = `
+                    <img src="${video.thumbnail}" alt="${video.title}" style="max-width: 100%; max-height: 60%; border-radius: 8px;" onerror="this.src='https://picsum.photos/seed/${video.videoId}/800/450?grayscale'">
+                    <p style="margin: 15px 0; color: #aaa;">Video akan dibuka di YouTube</p>
+                    <a href="https://www.youtube.com/watch?v=${video.videoId}" target="_blank" class="watch-youtube-btn">
+                        <span>▶️</span> Tonton di YouTube
+                    </a>
                 `;
                 
                 document.getElementById('playerModal').style.display = 'flex';
@@ -1082,7 +1368,6 @@
             }
 
             parseDurationToSeconds(duration) {
-                // Convert "5:30" to 330 seconds
                 const parts = duration.split(':');
                 if (parts.length === 2) {
                     return parseInt(parts[0]) * 60 + parseInt(parts[1]);
@@ -1091,39 +1376,46 @@
             }
 
             handleReaction(action) {
+                if (!currentPlayingVideo) return;
+                
                 if (!myselfActive) {
                     alert('Aktifkan My Self mode terlebih dahulu untuk mereaksi video!');
                     return;
                 }
                 
-                const videoId = 'current_video'; // In reality, get from current video
-                const videoTitle = document.getElementById('playerTitle').textContent;
+                const videoId = currentPlayingVideo.videoId;
+                const videoTitle = currentPlayingVideo.title;
                 
                 this.myselfSystem.recordVideoInteraction(videoId, action, {
                     title: videoTitle,
                     timestamp: new Date().toISOString()
                 });
                 
-                // Show feedback
-                const feedback = {
-                    'like': 'Video disukai!',
-                    'skip': 'Video dilewati!',
-                    'finish': 'Video selesai ditonton!',
-                    'share': 'Video dibagikan!'
+                // Highlight the clicked button
+                document.querySelectorAll('.reaction').forEach(btn => btn.classList.remove('active'));
+                event.target.classList.add('active');
+                
+                const messages = {
+                    'like': 'Video disukai! Sistem akan merekomendasikan lebih banyak konten seperti ini.',
+                    'skip': 'Video dilewati! Sistem akan mengurangi rekomendasi konten serupa.',
+                    'finish': 'Video ditandai sebagai selesai ditonton!',
+                    'share': 'Video dibagikan! (Simulasi)'
                 };
                 
-                alert(feedback[action]);
+                alert(messages[action]);
                 
-                // If skip or finish, close player
+                // Close modal after skip or finish
                 if (action === 'skip' || action === 'finish') {
-                    document.getElementById('playerModal').style.display = 'none';
-                    
-                    // Load new video recommendation
-                    if (action === 'skip' && myselfActive) {
-                        setTimeout(() => {
-                            this.loadHomeVideos();
-                        }, 500);
-                    }
+                    setTimeout(() => {
+                        document.getElementById('playerModal').style.display = 'none';
+                        
+                        // Load new recommendations after skipping
+                        if (action === 'skip' && myselfActive) {
+                            setTimeout(() => {
+                                this.loadHomeVideos();
+                            }, 500);
+                        }
+                    }, 1000);
                 }
             }
         }
@@ -1135,20 +1427,26 @@
             // Welcome message
             setTimeout(() => {
                 console.log(`
-╔══════════════════════════════════════╗
-║         🎬 MeTube Loaded! 🎬         ║
-║                                      ║
-║  Fitur:                              ║
-║  • YouTube tanpa iklan              ║
-║  • Sistem My Self (AI Tracking)     ║
-║  • Black & White aesthetic          ║
-║  • LocalStorage untuk preferensi    ║
-║                                      ║
-║  Aktifkan "MY SELF" untuk mulai!    ║
-╚══════════════════════════════════════╝
+╔══════════════════════════════════════════════════╗
+║         🎬 MeTube Siap Digunakan! 🎬             ║
+║                                                  ║
+║  APA YANG BERFUNGSI:                             ║
+║  • Pencarian video dari API                      ║
+║  • Sistem My Self (Tracking preferensi)         ║
+║  • Black & White UI                             ║
+║  • LocalStorage untuk profil pengguna           ║
+║  • Link langsung ke YouTube                      ║
+║                                                  ║
+║  CARA PAKAI:                                     ║
+║  1. Aktifkan "MY SELF"                           ║
+║  2. Search video                                 ║
+║  3. Klik video untuk lihat info                  ║
+║  4. Klik "Tonton di YouTube"                     ║
+║  5. Gunakan tombol reaksi                        ║
+╚══════════════════════════════════════════════════╝
                 `);
             }, 1000);
         });
     </script>
 </body>
-    </html>
+</html>
